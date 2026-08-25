@@ -441,7 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // weeks at a time, so a long-lived install would never notice a
             // release. The panel is also the only place the notice appears, so
             // opening it is exactly the right moment. Still throttled to once
-            // a day, so this is at most one request per day, not per open.
+            // an hour, so this is at most one request an hour, not per open.
             checkForUpdate()
             // Activate *before* showing. The popover's material follows the
             // window's active state, so showing first meant it rendered in the

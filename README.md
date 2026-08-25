@@ -85,7 +85,7 @@ leaving you with dark keys. Pressing F5/F6 re-engages macOS's own control.
 
 ## Updates
 
-The app checks GitHub once a day for a newer release. If there is one, the
+The app checks GitHub for a newer release when you open the panel, at most once an hour. If there is one, the
 version in the corner of the panel becomes a link to the release page.
 
 It only ever asks GitHub what the latest release tag is — nothing about you or

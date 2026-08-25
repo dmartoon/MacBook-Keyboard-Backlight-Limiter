@@ -19,11 +19,19 @@ enum UpdateCheck {
         "https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter/releases/latest")!
 
     private static let lastCheckKey = "lastUpdateCheck"
-    private static let interval: TimeInterval = 24 * 60 * 60
+    /// One hour, not one day. A day sounds harmless and is not: after a
+    /// release, a user can open the panel repeatedly for 24 hours and be told
+    /// nothing, which reads as the feature being broken. Observed twice on real
+    /// machines before it was believed.
+    ///
+    /// The limit this guards against is GitHub's unauthenticated 60 requests
+    /// per hour per IP (measured: `x-ratelimit-limit: 60`). One check an hour
+    /// is nowhere near it — you would have to open the panel 60 times in an
+    /// hour, and even then only from a shared IP.
+    private static let interval: TimeInterval = 60 * 60
 
     /// Calls back on the main queue with the newer version, or never calls back
-    /// at all. Throttled to once a day: the check is cheap but not free, and
-    /// GitHub rate-limits unauthenticated callers by IP.
+    /// at all. Throttled — see `interval` for why an hour and not a day.
     static func check(currentVersion: String,
                       force: Bool = false,
                       completion: @escaping (String) -> Void) {
