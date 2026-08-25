@@ -1,6 +1,6 @@
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var limiter: Limiter?
@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var luxField: NSTextField!
 
     private var versionField: NSTextField!
+    private var globalClickMonitor: Any?
     private var loginCheckbox: NSButton!
     private var loginNote: NSTextField!
     private var hideIconCheckbox: NSButton!
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = vc
         popover.contentSize = mainView.frame.size
         popover.behavior = .transient
+        popover.delegate = self
 
         limiter.onChange = { [weak self] observed, lux, gated in
             guard let self else { return }
@@ -67,6 +69,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         limiter.start()
+
+        // The mouse monitor below catches clicks, but not a keyboard app
+        // switch. Resigning active covers Cmd-Tab and anything else that takes
+        // focus without a click landing outside us.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.popover.isShown else { return }
+            self.popover.performClose(nil)
+        }
 
         // Notifies only — never installs. Silent on failure, and skipped when
         // there is no bundle to read a version from (the bare test binary).
@@ -129,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         func checkBottomRow(_ what: String) {
             let row = mainView.subviews
                 .filter { $0.frame.minY < 40 && !$0.isHidden }
+                .filter { !($0 is NSVisualEffectView) }   // full-bounds backdrop
                 .sorted { $0.frame.minX < $1.frame.minX }
             for i in 0..<row.count {
                 for j in (i + 1)..<row.count where row[i].frame.intersects(row[j].frame) {
@@ -190,6 +203,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Dismissal. Only the monitor lifecycle is assertable here: a process
+        // launched from a terminal cannot become frontmost, so NSApp.isActive
+        // stays false and the app can never *resign* active either. Asserting
+        // the focus-loss behaviour unconditionally would fail for purely
+        // environmental reasons, which is worse than not testing it — a suite
+        // that cries wolf gets ignored.
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        pump(0.4)
+        if globalClickMonitor == nil {
+            fail("no click monitor installed while the popover is shown")
+        } else {
+            print("  dismissal: click monitor installed while shown")
+        }
+
+        if NSApp.isActive {
+            if let other = NSWorkspace.shared.runningApplications.first(where: {
+                $0.bundleIdentifier == "com.apple.finder"
+            }) {
+                other.activate()
+                pump(1.0)
+                if popover.isShown { fail("popover stayed open after another app took focus") }
+                else { print("  dismissal: closed when another app took focus") }
+            }
+        } else {
+            print("  dismissal: focus-loss check skipped (cannot activate from a terminal launch)")
+        }
+
+        // Poll rather than sleep a fixed amount: performClose animates, and
+        // popoverDidClose lands somewhere past half a second. A fixed 0.4s
+        // wait reported a teardown failure that was purely the test being
+        // impatient.
+        popover.performClose(nil)
+        let closeDeadline = Date().addingTimeInterval(3)
+        while globalClickMonitor != nil && Date() < closeDeadline { pump(0.1) }
+        if globalClickMonitor != nil { fail("click monitor left installed after close") }
+        else { print("  dismissal: monitor torn down on close, nothing runs at idle") }
+
         popover.performClose(nil); pump(0.2)
         print(failures == 0 ? "PASS" : "FAIL (\(failures))")
         exit(failures == 0 ? 0 : 1)
@@ -202,6 +252,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMainView(backlight: KeyboardBacklight, hasSensor: Bool) {
         let h: CGFloat = hasSensor ? 434 : 334
         let v = NSView(frame: NSRect(x: 0, y: 0, width: W, height: h))
+
+        // Belt and braces with the activation ordering above: an explicit
+        // backdrop pinned to .active never renders the inactive,
+        // over-transparent variant, whatever the window is doing.
+        let backdrop = NSVisualEffectView(frame: v.bounds)
+        backdrop.material = .popover
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .active
+        backdrop.autoresizingMask = [.width, .height]
+        v.addSubview(backdrop)
+
         var y = h - 30
 
         let title = label("Keyboard Backlight Limiter", 13, .semibold)
@@ -381,8 +442,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             refreshLoginState()
             limiter?.refresh()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // Activate *before* showing. The popover's material follows the
+            // window's active state, so showing first meant it rendered in the
+            // washed-out inactive look until activation caught up — visibly
+            // over-transparent for the first moments after every open.
             NSApp.activate(ignoringOtherApps: true)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
 
@@ -505,6 +570,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// out with absolute frames at one fixed height, so an appearing row would
     /// mean reflowing everything below it; reusing this slot leaves the bottom
     /// row exactly as the layout self-test already guards it.
+    // MARK: - Dismissal
+
+    /// `.transient` is documented to close the popover when the user interacts
+    /// outside it, and it does for ordinary windows — but **not for menu bar
+    /// extras**. Clicking Control Center, Wi-Fi or the clock left the panel
+    /// sitting open, and only clicking our own icon again dismissed it.
+    ///
+    /// A global mouse monitor sees those clicks. It is installed only while the
+    /// popover is up and torn down on close, so nothing runs at idle — which
+    /// matters for an app whose pitch is 0.0% CPU when nothing is happening.
+    func popoverDidShow(_ notification: Notification) {
+        guard globalClickMonitor == nil else { return }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            self?.popover.performClose(nil)
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
+    }
+
     private func showUpdateAvailable(_ latest: String) {
         versionField.stringValue = "Update to \(latest)"
         versionField.textColor = .linkColor
