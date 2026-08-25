@@ -95,12 +95,12 @@ for any reason it stays silent.
 ## Requirements
 
 - Apple Silicon or Intel (the app ships universal)
-- A MacBook with a backlit keyboard and an ambient light sensor
-- macOS 26 or later. Earlier versions may well work, but the app talks to a
-  private framework and has only been verified on macOS 26, so the minimum
-  matches what has actually been tested rather than what might be fine.
-  On hardware it does not recognise it degrades safely and reports that no
-  keyboard backlight was found.
+- macOS 13 or later — but everything has only been developed and verified on
+  macOS 26, so anything earlier is genuinely untested. The app talks to a
+  private framework; if that framework differs on your version, it does not
+  misbehave, it just reports that no keyboard backlight was found. If that
+  happens, please open an issue and say which macOS version you are on.
+- A MacBook with a backlit keyboard and an ambient light sensor.
 
 ## Building from source
 
