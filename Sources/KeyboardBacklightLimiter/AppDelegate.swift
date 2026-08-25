@@ -25,14 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let W: CGFloat = 288
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        // variableLength, not squareLength: the icon is ~1.8:1, and a square
+        // item would clip it to the menu bar's height and squash the fan.
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            if let img = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "Keyboard Backlight Limiter") {
-                img.isTemplate = true
-                button.image = img
-            } else {
-                button.title = "⌨"
-            }
+            // The app's own motif rather than a stock SF Symbol, so the menu
+            // bar and the app icon read as one product. See MenuBarIcon for why
+            // it is drawn rather than scaled from the icon.
+            button.image = MenuBarIcon.image()
+            button.image?.accessibilityDescription = "Keyboard Backlight Limiter"
             button.target = self
             button.action = #selector(togglePopover)
         }
