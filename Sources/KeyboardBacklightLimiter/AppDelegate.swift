@@ -80,13 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.popover.performClose(nil)
         }
 
-        // Notifies only — never installs. Silent on failure, and skipped when
-        // there is no bundle to read a version from (the bare test binary).
-        if Self.displayVersion != "dev" {
-            UpdateCheck.check(currentVersion: Self.displayVersion) { [weak self] latest in
-                self?.showUpdateAvailable(latest)
-            }
-        }
+        checkForUpdate()
 
         if ProcessInfo.processInfo.environment["KBL_SELFTEST"] != nil { runSelfTest() }
     }
@@ -442,6 +436,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             refreshLoginState()
             limiter?.refresh()
+            // Checking only at launch was near-useless: this app runs for
+            // weeks at a time, so a long-lived install would never notice a
+            // release. The panel is also the only place the notice appears, so
+            // opening it is exactly the right moment. Still throttled to once
+            // a day, so this is at most one request per day, not per open.
+            checkForUpdate()
             // Activate *before* showing. The popover's material follows the
             // window's active state, so showing first meant it rendered in the
             // washed-out inactive look until activation caught up — visibly
@@ -596,12 +596,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    /// Notifies only — never installs. Silent on failure, and skipped when
+    /// there is no bundle to read a version from (the bare test binary).
+    private func checkForUpdate() {
+        guard Self.displayVersion != "dev" else { return }
+        UpdateCheck.check(currentVersion: Self.displayVersion) { [weak self] latest in
+            self?.showUpdateAvailable(latest)
+        }
+    }
+
     private func showUpdateAvailable(_ latest: String) {
         versionField.stringValue = "Update to \(latest)"
         versionField.textColor = .linkColor
         versionField.toolTip = "A newer version is available on GitHub"
-        versionField.addGestureRecognizer(
-            NSClickGestureRecognizer(target: self, action: #selector(openReleases)))
+        // Guarded: this can now run on every panel open, and a recogniser per
+        // call would stack up duplicates on the same label.
+        if versionField.gestureRecognizers.isEmpty {
+            versionField.addGestureRecognizer(
+                NSClickGestureRecognizer(target: self, action: #selector(openReleases)))
+        }
     }
 
     @objc private func openReleases() {
