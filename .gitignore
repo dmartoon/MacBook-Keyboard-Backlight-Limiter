@@ -1,0 +1,16 @@
+# Build outputs — all regenerable by build-app.sh / release.sh
+.build/
+build/
+dist/
+*.dSYM/
+
+# macOS
+.DS_Store
+
+# Kept locally, deliberately not published: internal engineering notes,
+# diagnostic tooling and design source. Nothing here is needed to build,
+# sign, notarize or publish the app.
+CLAUDE.md
+pick-min.sh
+tools/pick-min.m
+tools/icon-reference.png
