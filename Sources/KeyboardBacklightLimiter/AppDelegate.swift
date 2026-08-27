@@ -27,7 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var latestUpdateVersion: String?
     private var globalClickMonitor: Any?
     private var loginCheckbox: NSButton!
-    private var loginNote: NSTextField!
     private var hideIconCheckbox: NSButton!
 
     private let W: CGFloat = 288
@@ -120,11 +119,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
-        // A real window so the popover can actually lay out.
-        let win = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 400, height: 300),
+        // A real window so the popover can actually lay out — placed on the
+        // sharpest screen attached. `CGWindowListCreateImage` captures at the
+        // window's backing scale, so on a 1x external monitor the snapshot comes
+        // out half the size of the same panel on the built-in Retina display.
+        // docs/screenshot.png wants the 2x one.
+        let screen = NSScreen.screens.max { $0.backingScaleFactor < $1.backingScaleFactor }
+        let origin = screen?.frame.origin ?? .zero
+        //
+        // Big enough for the panel to sit entirely over it, and black: the
+        // backdrop blends with whatever is *behind* the window, so a default
+        // grey harness window washes the whole panel out — visible in the
+        // snapshot, and not how the popover looks over a real desktop.
+        let win = NSWindow(contentRect: NSRect(x: origin.x + 120, y: origin.y + 120,
+                                               width: 640, height: 640),
                            styleMask: [.titled], backing: .buffered, defer: false)
+        win.backgroundColor = .black
         win.makeKeyAndOrderFront(nil)
-        let anchor = NSView(frame: NSRect(x: 180, y: 140, width: 20, height: 20))
+        // Low in the window: `.maxY` puts the panel *above* the anchor, so an
+        // anchor near the top pushes it off the window entirely and it blends
+        // with the desktop instead.
+        let anchor = NSView(frame: NSRect(x: 300, y: 60, width: 20, height: 20))
         win.contentView?.addSubview(anchor)
         NSApp.activate(ignoringOtherApps: true)
         pump(0.4)
@@ -159,6 +174,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         print("  \(mainView.subviews.count) subviews in bounds")
         checkBottomRow("normal")
 
+        // Staged for the README asset this also produces: the checkboxes are
+        // shown in their on state so the picture demonstrates both options.
+        // Nothing else is faked — the values are whatever the machine reports.
+        let priorLogin = loginCheckbox.state, priorHide = hideIconCheckbox.state
+        if ProcessInfo.processInfo.environment["KBL_SNAPSHOT"] != nil {
+            loginCheckbox.state = .on
+            hideIconCheckbox.state = .on
+        }
+
+        // KBL_SNAPSHOT=<path> dumps what the panel actually renders, which is
+        // the only way to catch layout that is technically in-bounds but ugly.
+        // It runs here, on the plain panel, rather than after the update-notice
+        // cases below — those leave an absurd "Update to 10.20.30" in the
+        // version slot, which is neither what the panel normally looks like nor
+        // what docs/screenshot.png should show.
+        //
+        // Capture the popover's own window off the window server. Both
+        // offscreen paths (cacheDisplay and dataWithPDF) render the text but
+        // drop every AppKit control — sliders, segmented controls, checkboxes
+        // and buttons all come back blank — so the only faithful render is the
+        // real composited window.
+        if let out = ProcessInfo.processInfo.environment["KBL_SNAPSHOT"] {
+            pump(0.4)
+            if let win = mainView.window {
+                let id = CGWindowID(win.windowNumber)
+                // The window *and everything below it*, over an explicit rect.
+                // Capturing the popover alone (.optionIncludingWindow with a
+                // .null rect) leaves the `.behindWindow` backdrop with nothing
+                // to blend against, and the whole panel comes back a flat grey
+                // that is not what it looks like on a desktop.
+                //
+                // CGWindowListCreateImage takes global coordinates: origin at
+                // the *primary* display's top-left, y growing downward, so the
+                // Cocoa frame has to be flipped through that display's height.
+                let primaryH = (NSScreen.screens.first { $0.frame.origin == .zero }
+                                ?? NSScreen.main)?.frame.height ?? win.frame.maxY
+                // Padded: the popover's arrow sits right on the frame edge and
+                // comes back clipped otherwise. The margin is the black window
+                // behind, which is what the rounded corners want anyway.
+                let pad: CGFloat = 6
+                let f = win.frame.insetBy(dx: -pad, dy: -pad)
+                let rect = CGRect(x: f.origin.x, y: primaryH - f.origin.y - f.height,
+                                  width: f.width, height: f.height)
+                if let img = CGWindowListCreateImage(rect,
+                                                     [.optionIncludingWindow, .optionOnScreenBelowWindow],
+                                                     id, [.bestResolution]) {
+                    let rep = NSBitmapImageRep(cgImage: img)
+                    if let png = rep.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: out))
+                        print("  snapshot \(img.width)x\(img.height) -> \(out)")
+                    }
+                } else {
+                    print("  snapshot unavailable (screen recording permission?)")
+                }
+            }
+        }
+        loginCheckbox.state = priorLogin
+        hideIconCheckbox.state = priorHide
+
         // The update notice reuses the version label's slot rather than adding a
         // row, and "Update to ..." is wider than "Version ...". Two separate
         // guarantees: a realistic version must not truncate, and even an absurd
@@ -184,30 +258,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         mainView.layoutSubtreeIfNeeded()
         pump(0.2)
         checkBottomRow("update, absurd version")
-
-        // KBL_SNAPSHOT=<path> dumps what the panel actually renders, which is
-        // the only way to catch layout that is technically in-bounds but ugly.
-        // Capture the popover's own window off the window server. Both
-        // offscreen paths (cacheDisplay and dataWithPDF) render the text but
-        // drop every AppKit control — sliders, segmented controls, checkboxes
-        // and buttons all come back blank — so the only faithful render is the
-        // real composited window.
-        if let out = ProcessInfo.processInfo.environment["KBL_SNAPSHOT"] {
-            pump(0.4)
-            if let win = mainView.window {
-                let id = CGWindowID(win.windowNumber)
-                if let img = CGWindowListCreateImage(.null, .optionIncludingWindow, id,
-                                                     [.boundsIgnoreFraming, .bestResolution]) {
-                    let rep = NSBitmapImageRep(cgImage: img)
-                    if let png = rep.representation(using: .png, properties: [:]) {
-                        try? png.write(to: URL(fileURLWithPath: out))
-                        print("  snapshot \(img.width)x\(img.height) -> \(out)")
-                    }
-                } else {
-                    print("  snapshot unavailable (screen recording permission?)")
-                }
-            }
-        }
 
         // The panel has two layouts, and until now only the one this machine
         // happens to produce was ever checked. The short no-sensor layout and
@@ -348,7 +398,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func buildMainView(backlight: KeyboardBacklight, hasSensor: Bool) {
         sensorSectionShown = hasSensor
-        let h: CGFloat = hasSensor ? 434 : 334
+        // 366/266. Both checkboxes used to carry an explanatory note under
+        // them, worth 68pt between them; the notes were removed as noise.
+        let h: CGFloat = hasSensor ? 366 : 266
         let v = NSView(frame: NSRect(x: 0, y: 0, width: W, height: h))
 
         // Belt and braces with the activation ordering above: an explicit
@@ -368,7 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         v.addSubview(title)
         y -= 30
 
-        let maxLabel = label("Maximum brightness", 11, .regular)
+        let maxLabel = label("Maximum brightness limit", 11, .regular)
         maxLabel.textColor = .secondaryLabelColor
         maxLabel.frame = NSRect(x: 16, y: y, width: W - 32, height: 15)
         v.addSubview(maxLabel)
@@ -445,51 +497,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                                  target: self, action: #selector(loginToggled(_:)))
         loginCheckbox.frame = NSRect(x: 16, y: y, width: W - 32, height: 20)
         v.addSubview(loginCheckbox)
-        y -= 32
-
-        loginNote = label("", 10, .regular)
-        loginNote.textColor = .tertiaryLabelColor
-        (loginNote.cell as? NSTextFieldCell)?.wraps = true
-        loginNote.frame = NSRect(x: 34, y: y, width: W - 50, height: 30)
-        v.addSubview(loginNote)
-        y -= 34
+        y -= 30
 
         hideIconCheckbox = NSButton(checkboxWithTitle: "Hide menu bar icon",
                                     target: self, action: #selector(hideIconToggled(_:)))
         hideIconCheckbox.frame = NSRect(x: 16, y: y, width: W - 32, height: 20)
         v.addSubview(hideIconCheckbox)
-        y -= 32
 
-        let hideNote = label("The app keeps running. Open it again to bring the icon back.",
-                             10, .regular)
-        hideNote.textColor = .tertiaryLabelColor
-        (hideNote.cell as? NSTextFieldCell)?.wraps = true
-        hideNote.frame = NSRect(x: 34, y: y, width: W - 50, height: 28)
-        v.addSubview(hideNote)
-
-        // Bottom row: version left, Support me and Quit right. The Support
+        // Bottom row: version left, the support button and Quit right. That
         // button is measured rather than fixed-width — its title is the one
-        // piece here that might be reworded — and everything to its left is
-        // positioned off the result. `KBL_SELFTEST` asserts they never collide.
+        // piece here that might be reworded, and has been — and everything to
+        // its left is positioned off the result. `KBL_SELFTEST` asserts they
+        // never collide, and that the update notice still fits what is left.
+        // Both buttons are measured. Quit used to be a fixed 58pt, which was
+        // ~10pt of slack nobody needed; the longer support title spends the
+        // row's whole budget, so that slack now belongs to the version label.
         let quit = NSButton(title: "Quit", target: self, action: #selector(quit))
         quit.bezelStyle = .rounded
         quit.controlSize = .small
-        quit.frame = NSRect(x: W - 74, y: 12, width: 58, height: 22)
+        quit.sizeToFit()
+        let qw = Swift.max(ceil(quit.frame.width), 46)
+        quit.frame = NSRect(x: W - 16 - qw, y: 12, width: qw, height: 22)
         v.addSubview(quit)
 
-        let support = NSButton(title: "Support me", target: self, action: #selector(openSupport))
+        let support = NSButton(title: "Buy me a cookie", target: self, action: #selector(openSupport))
         support.bezelStyle = .rounded
         support.controlSize = .small
         support.sizeToFit()
         let sw = Swift.max(ceil(support.frame.width), 86)
-        support.frame = NSRect(x: quit.frame.minX - 8 - sw, y: 12, width: sw, height: 22)
+        support.frame = NSRect(x: quit.frame.minX - 6 - sw, y: 12, width: sw, height: 22)
         v.addSubview(support)
 
         let version = label("Version \(Self.displayVersion)", 10, .regular)
         version.textColor = .tertiaryLabelColor
         version.lineBreakMode = .byTruncatingTail
         version.frame = NSRect(x: 16, y: 18,
-                               width: Swift.max(40, support.frame.minX - 8 - 16), height: 14)
+                               width: Swift.max(40, support.frame.minX - 6 - 16), height: 14)
         v.addSubview(version)
         versionField = version
 
@@ -625,24 +668,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         sensitivityHint.stringValue = s.explanation
     }
 
+    /// The note under the checkbox used to carry this, and it is gone. Snapping
+    /// the checkbox back with no explanation reads as a bug, so the failure
+    /// gets an alert — a rare path, and the only channel left that costs no
+    /// panel height. The /Applications caveat rides along here rather than
+    /// sitting on screen permanently: it only ever mattered when this fails.
     @objc private func loginToggled(_ sender: NSButton) {
         let wanted = sender.state == .on
-        if let err = LaunchAtLogin.set(wanted) {
-            sender.state = wanted ? .off : .on
-            loginNote.stringValue = "Couldn't change: \(err)"
-            loginNote.textColor = .systemRed
-        } else {
+        guard let err = LaunchAtLogin.set(wanted) else {
             refreshLoginState()
+            return
         }
+        sender.state = wanted ? .off : .on
+        popover.performClose(nil)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = wanted ? "Couldn't turn on launch at login"
+                                   : "Couldn't turn off launch at login"
+        var detail = err
+        if wanted && !LaunchAtLogin.isInApplications {
+            detail += "\n\nThe app is running from \(Bundle.main.bundlePath). "
+                    + "Login items register the app at its current path, so move it "
+                    + "to /Applications and try again."
+        }
+        alert.informativeText = detail
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func refreshLoginState() {
         hideIconCheckbox.state = Settings.hideMenuBarIcon ? .on : .off
         loginCheckbox.state = LaunchAtLogin.isEnabled ? .on : .off
-        loginNote.textColor = .tertiaryLabelColor
-        loginNote.stringValue = LaunchAtLogin.isInApplications
-            ? "Starts automatically when you log in."
-            : "Move the app to /Applications first — otherwise the login item breaks if the app moves."
     }
 
     @objc private func hideIconToggled(_ sender: NSButton) {

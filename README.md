@@ -40,7 +40,7 @@ it — allow it under System Settings › Privacy & Security.
 
 ## Settings
 
-**Maximum brightness** — the ceiling the backlight will never exceed.
+**Maximum brightness limit** — the ceiling the backlight will never exceed.
 
 | | |
 |---|---|
