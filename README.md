@@ -85,8 +85,13 @@ leaving you with dark keys. Pressing F5/F6 re-engages macOS's own control.
 
 ## Updates
 
-The app checks GitHub for a newer release when you open the panel, at most once an hour. If there is one, the
-version in the corner of the panel becomes a link to the release page.
+The app checks GitHub for a newer release at launch, every six hours, and
+whenever you open the panel — at most one request an hour. If there is one, the
+version in the corner of the panel becomes a link to the release page, and you
+get a notification, so the news still reaches you when the menu bar icon is
+hidden or you simply have not opened the panel in weeks. macOS asks for
+notification permission the first time there is actually something to tell you,
+and each release is announced once.
 
 It only ever asks GitHub what the latest release tag is — nothing about you or
 your machine is sent, and nothing is installed automatically. If the check fails

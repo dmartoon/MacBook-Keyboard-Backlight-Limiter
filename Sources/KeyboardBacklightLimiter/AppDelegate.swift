@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// a rebuild would otherwise silently drop an update the user was told about.
     private var latestUpdateVersion: String?
     private var globalClickMonitor: Any?
+    /// Keeps the periodic update check alive. Six hours, with generous leeway
+    /// so it coalesces with whatever else wakes the machine.
+    private var updateTimer: DispatchSourceTimer?
+    private static let updateInterval: TimeInterval = 6 * 60 * 60
     private var loginCheckbox: NSButton!
     private var hideIconCheckbox: NSButton!
 
@@ -88,7 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.popover.performClose(nil)
         }
 
+        // Clicking the notification opens the releases page, same as clicking
+        // the notice in the panel. Set during launch — a delegate installed
+        // later does not receive the click.
+        UpdateNotifier.shared.onOpen = { [weak self] in self?.openReleases() }
+        UpdateNotifier.shared.start()
+
         checkForUpdate()
+        startUpdateTimer()
 
         if ProcessInfo.processInfo.environment["KBL_SELFTEST"] != nil { runSelfTest() }
     }
@@ -319,6 +330,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             waitClosed()
         } else {
             print("  layout swap check skipped (no ambient sensor on this Mac)")
+        }
+
+        // The notifier must be completely inert in a process with no bundle —
+        // this one. It is reached on every real update, so a crash here would
+        // take the app down for everybody at exactly the worst moment.
+        UpdateNotifier.shared.start()
+        UpdateNotifier.shared.notifyIfNew(version: "99.0.0")
+        if UserDefaults.standard.string(forKey: "lastNotifiedVersion") == "99.0.0" {
+            fail("notifier wrote state from a process with no bundle")
+        } else {
+            print("  update notifier: inert without a bundle, as required")
         }
 
         // Dismissal. Only the monitor lifecycle is assertable here: a process
@@ -764,7 +786,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard Self.displayVersion != "dev" else { return }
         UpdateCheck.check(currentVersion: Self.displayVersion) { [weak self] latest in
             self?.showUpdateAvailable(latest)
+            // Also as a system notification, which is the only channel that
+            // reaches a hidden icon or an app nobody has opened in weeks.
+            // Deduplicated by version inside the notifier.
+            UpdateNotifier.shared.notifyIfNew(version: latest)
         }
+    }
+
+    /// Checking at launch and on panel open was never enough on its own: with
+    /// the menu bar icon hidden the panel cannot be opened at all, so the launch
+    /// check was the *only* one that ever ran — for an app that stays up for
+    /// weeks. A notification with nothing to report is useless, so the schedule
+    /// is the load-bearing half of this.
+    ///
+    /// `UpdateCheck` still throttles to one request an hour, so this cannot
+    /// become chatty regardless of the interval chosen here.
+    private func startUpdateTimer() {
+        guard Self.displayVersion != "dev" else { return }
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + Self.updateInterval,
+                   repeating: Self.updateInterval,
+                   leeway: .seconds(600))
+        t.setEventHandler { [weak self] in self?.checkForUpdate() }
+        updateTimer = t
+        t.resume()
     }
 
     private func showUpdateAvailable(_ latest: String) {
