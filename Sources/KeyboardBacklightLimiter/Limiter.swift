@@ -15,7 +15,6 @@ import Foundation
 /// change notification, so the last write wins and it converges either way.
 final class Limiter {
     private let backlight: KeyboardBacklight
-    private let sensor: AmbientLightSensor?
     private let lock = NSLock()
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "com.martun.KeyboardBacklightLimiter.drive", qos: .utility)
@@ -36,12 +35,34 @@ final class Limiter {
     /// so the ambient threshold can apply hysteresis.
     private var isLit = false
 
+    /// The sensor, which may arrive *after* launch.
+    ///
+    /// This used to be a `let` decided once in `applicationDidFinishLaunching`,
+    /// and that was wrong: as a login item the app probes 21 seconds into boot,
+    /// where the answer is unreliable for the two reasons documented on
+    /// `AmbientLightSensor.find()`. A machine with a perfectly good sensor
+    /// therefore spent its entire session in no-sensor mode — the panel hid the
+    /// sensitivity control and `computeTarget` just held the ceiling, with no
+    /// ambient response at all — until the app was restarted by hand.
+    ///
+    /// So a nil is treated as "not yet", not as "never".
+    private var sensor: AmbientLightSensor?
+    /// How long after launch to keep re-probing on the sampling timer.
+    /// Measured: 1.7ms per walk when the sensor is there (the walk stops at it),
+    /// 7.1ms on a Mac that genuinely has none. So at worst ~0.85s of work spread
+    /// across two minutes, once, and then nothing at idle. Past the deadline the
+    /// only remaining probes are on panel open, which covers the long tail free.
+    private let probeUntil = Date().addingTimeInterval(120)
+
     /// (brightness now in force, lux, whether the ambient gate is holding it off)
     var onChange: ((Float, Int?, Bool) -> Void)?
+    /// Fired on the main queue the first time the sensor turns up, so the panel
+    /// can grow the section it left out. Never fired if it was there at launch.
+    var onSensorAppeared: (() -> Void)?
 
     var ceiling: Float { lock.lock(); defer { lock.unlock() }; return _ceiling }
     var sensitivity: Sensitivity { lock.lock(); defer { lock.unlock() }; return _sensitivity }
-    var hasSensor: Bool { sensor != nil }
+    var hasSensor: Bool { lock.lock(); defer { lock.unlock() }; return sensor != nil }
 
     init(backlight: KeyboardBacklight, sensor: AmbientLightSensor?,
          ceiling: Float, sensitivity: Sensitivity) {
@@ -141,17 +162,32 @@ final class Limiter {
         return max(min(Self.minVisible, ceiling), scaled)
     }
 
-    /// Recompute and apply now — used when the panel opens.
-    func refresh() { update() }
+    /// Recompute and apply now — used when the panel opens. Always retries the
+    /// sensor, however long the app has been up: the panel is about to be
+    /// rebuilt around the answer, and one registry walk per open is free.
+    func refresh() { update(probeSensor: true) }
 
-    private func update(force: Bool = false) {
+    private func update(force: Bool = false, probeSensor: Bool = false) {
         lock.lock()
         if isWriting { lock.unlock(); return }
         let ceil = _ceiling
         let sens = _sensitivity
+        var als = sensor
+        let probe = als == nil && (probeSensor || Date() < probeUntil)
         lock.unlock()
 
-        let lux = sensor?.lux()
+        var appeared = false
+        if probe, let found = AmbientLightSensor.find() {
+            lock.lock()
+            if sensor == nil { sensor = found; appeared = true }
+            als = sensor
+            lock.unlock()
+        }
+        if appeared {
+            DispatchQueue.main.async { [weak self] in self?.onSensorAppeared?() }
+        }
+
+        let lux = als?.lux()
         let target = computeTarget(lux: lux, ceiling: ceil, sensitivity: sens)
         let current = backlight.brightness()
 

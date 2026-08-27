@@ -17,6 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var luxField: NSTextField!
 
     private var versionField: NSTextField!
+    /// The panel's layout depends on whether the ambient sensor exists, and
+    /// that answer can change after launch — see `Limiter.sensor`. These track
+    /// what the *current* panel was built for and what still owes a rebuild.
+    private var sensorSectionShown = false
+    private var rebuildWhenClosed = false
+    /// Replayed onto a rebuilt panel: the notice lives in the version label, so
+    /// a rebuild would otherwise silently drop an update the user was told about.
+    private var latestUpdateVersion: String?
     private var globalClickMonitor: Any?
     private var loginCheckbox: NSButton!
     private var loginNote: NSTextField!
@@ -52,15 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                               sensitivity: Settings.sensitivity)
         self.limiter = limiter
 
-        buildMainView(backlight: backlight, hasSensor: sensor != nil)
-
-        let vc = NSViewController()
-        vc.view = mainView
         popover = NSPopover()
-        popover.contentViewController = vc
-        popover.contentSize = mainView.frame.size
         popover.behavior = .transient
         popover.delegate = self
+        buildMainView(backlight: backlight, hasSensor: sensor != nil)
+        installMainView()
+
+        // The sensor may only turn up seconds after launch, and the panel is
+        // laid out differently with and without it, so rebuild when it does.
+        limiter.onSensorAppeared = { [weak self] in self?.sensorAppeared() }
 
         limiter.onChange = { [weak self] observed, lux, gated in
             guard let self else { return }
@@ -129,9 +137,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                      popover.contentSize.width, popover.contentSize.height,
                      (popover.isShown ? "Y" : "n") as NSString))
 
-        for sub in mainView.subviews where !mainView.bounds.contains(sub.frame) {
-            fail("out of bounds: \(name(sub)) at \(NSStringFromRect(sub.frame))")
+        func checkBounds(_ what: String) {
+            for sub in mainView.subviews where !mainView.bounds.contains(sub.frame) {
+                fail("out of bounds (\(what)): \(name(sub)) at \(NSStringFromRect(sub.frame))")
+            }
         }
+        checkBounds("normal")
 
         func checkBottomRow(_ what: String) {
             let row = mainView.subviews
@@ -198,6 +209,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
+        // The panel has two layouts, and until now only the one this machine
+        // happens to produce was ever checked. The short no-sensor layout and
+        // the rebuild that replaces it when the sensor turns up late are the
+        // whole point of the sensor handling, so drive both for real.
+        //
+        // `isShown` flips well before the close animation delivers
+        // `popoverDidClose`, and the deferred rebuild hangs off that delegate
+        // call — so poll the monitor teardown, which is the real signal.
+        func waitClosed() {
+            popover.performClose(nil)
+            let deadline = Date().addingTimeInterval(3)
+            while (popover.isShown || globalClickMonitor != nil) && Date() < deadline { pump(0.1) }
+            pump(0.2)
+        }
+        // Skipped rather than failed on a Mac that genuinely has no sensor:
+        // there is no tall layout to compare against there, and a suite that
+        // fails for environmental reasons is a suite people learn to ignore.
+        if let backlight, limiter?.hasSensor == true {
+            waitClosed()
+            let tall = mainView.frame.height
+            buildMainView(backlight: backlight, hasSensor: false)
+            installMainView()
+            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+            pump(0.5)
+            let short = mainView.frame.height
+            print(String(format: "  no-sensor panel %.0fpt vs %.0fpt with sensor", short, tall))
+            if short >= tall { fail("no-sensor panel is not shorter than the sensor one") }
+            if popover.contentSize.height != short {
+                fail(String(format: "contentSize %.0fpt does not match the no-sensor view %.0fpt",
+                            popover.contentSize.height, short))
+            }
+            checkBounds("no sensor")
+            checkBottomRow("no sensor")
+
+            // A rebuild must never swap the content out from under an open
+            // panel — it has to wait for the close.
+            sensorAppeared()
+            if mainView.frame.height != short { fail("panel rebuilt while the popover was open") }
+            waitClosed()
+            if !sensorSectionShown { fail("deferred rebuild never ran after the popover closed") }
+
+            popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+            pump(0.5)
+            if mainView.frame.height != tall {
+                fail(String(format: "rebuilt panel is %.0fpt, expected %.0fpt", mainView.frame.height, tall))
+            }
+            if popover.contentSize.height != mainView.frame.height {
+                fail("contentSize did not follow the rebuilt view")
+            }
+            checkBounds("rebuilt with sensor")
+            checkBottomRow("rebuilt with sensor")
+            // The notice lives in the version label, which the rebuild threw away.
+            if versionField.stringValue.hasPrefix("Version") {
+                fail("update notice lost in the rebuild")
+            } else {
+                print("  update notice survived the rebuild: \u{22}\(versionField.stringValue)\u{22}")
+            }
+            waitClosed()
+        } else {
+            print("  layout swap check skipped (no ambient sensor on this Mac)")
+        }
+
         // Dismissal. Only the monitor lifecycle is assertable here: a process
         // launched from a terminal cannot become frontmost, so NSApp.isActive
         // stays false and the app can never *resign* active either. Asserting
@@ -205,7 +278,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // environmental reasons, which is worse than not testing it — a suite
         // that cries wolf gets ignored.
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
-        pump(0.4)
+        let showDeadline = Date().addingTimeInterval(3)
+        while globalClickMonitor == nil && Date() < showDeadline { pump(0.1) }
         if globalClickMonitor == nil {
             fail("no click monitor installed while the popover is shown")
         } else {
@@ -244,7 +318,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // MARK: - Main view
 
+    /// Hands the freshly built `mainView` to the popover in a **new** view
+    /// controller.
+    ///
+    /// Deliberately not `popover.contentViewController.view = mainView`: that
+    /// makes AppKit resize the *outgoing* view, whose subviews keep their
+    /// absolute positions and are pushed out of bounds (CLAUDE.md, fixed bug 4).
+    /// Replacing the controller discards the old view instead of resizing it,
+    /// and every frame in the new one is computed from scratch by `buildMainView`.
+    private func installMainView() {
+        let vc = NSViewController()
+        vc.view = mainView
+        popover.contentViewController = vc
+        popover.contentSize = mainView.frame.size
+    }
+
+    /// The sensor showed up after launch. Rebuild the panel around it — but not
+    /// underneath the user: swapping the content of a popover that is currently
+    /// on screen resizes it mid-display. It is closed almost all of the time,
+    /// so waiting costs nothing.
+    private func sensorAppeared() {
+        guard !sensorSectionShown, let backlight else { return }
+        guard !popover.isShown else { rebuildWhenClosed = true; return }
+        rebuildWhenClosed = false
+        buildMainView(backlight: backlight, hasSensor: true)
+        installMainView()
+        if let latest = latestUpdateVersion { showUpdateAvailable(latest) }
+    }
+
     private func buildMainView(backlight: KeyboardBacklight, hasSensor: Bool) {
+        sensorSectionShown = hasSensor
         let h: CGFloat = hasSensor ? 434 : 334
         let v = NSView(frame: NSRect(x: 0, y: 0, width: W, height: h))
 
@@ -595,6 +698,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             NSEvent.removeMonitor(monitor)
             globalClickMonitor = nil
         }
+        if rebuildWhenClosed { sensorAppeared() }
     }
 
     /// Notifies only — never installs. Silent on failure, and skipped when
@@ -607,6 +711,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func showUpdateAvailable(_ latest: String) {
+        latestUpdateVersion = latest
         versionField.stringValue = "Update to \(latest)"
         versionField.textColor = .linkColor
         versionField.toolTip = "A newer version is available on GitHub"
