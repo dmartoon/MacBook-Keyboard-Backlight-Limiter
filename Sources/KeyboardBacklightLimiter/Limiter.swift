@@ -35,6 +35,14 @@ final class Limiter {
     /// so the ambient threshold can apply hysteresis.
     private var isLit = false
 
+    /// Brightness the keyboard was at when we took it over, so quitting can
+    /// hand it back instead of inventing a level.
+    ///
+    /// Read in `init` because that is the last moment it is still the user's
+    /// value: `start()` writes on its first `update()`, and anything read
+    /// after that is our own output.
+    private let initialBrightness: Float
+
     /// The sensor, which may arrive *after* launch.
     ///
     /// This used to be a `let` decided once in `applicationDidFinishLaunching`,
@@ -70,6 +78,7 @@ final class Limiter {
         self.sensor = sensor
         self._ceiling = Self.clamp(ceiling)
         self._sensitivity = sensitivity
+        self.initialBrightness = backlight.brightness()
     }
 
     func start() {
@@ -88,21 +97,35 @@ final class Limiter {
         timer?.cancel(); timer = nil
         backlight.stopObserving()
 
-        // Leaving the keys dark on quit strands them. macOS does not pick the
-        // backlight back up on its own — measured: a graceful quit with the
-        // keys held dark at 5 lux left PWM 0 sitting there untouched. Once we
-        // exit nothing is driving it at all, so hand back a plainly lit
-        // keyboard rather than one that looks broken. A keyboard the user
-        // already had lit is left exactly as it was.
-        if backlight.brightness() < Self.offEpsilon {
-            backlight.setBrightness(Self.restoreOnQuit)
-        }
+        // Hand back the level we found, not one we invented. Once we exit,
+        // nothing drives the backlight at all — macOS does not resume, so
+        // whatever we leave is what the user lives with until they press
+        // F5/F6.
+        //
+        // The floor stays, and it is not paranoia: keys that were dark at
+        // launch were dark *under macOS's management*, which would have re-lit
+        // them when the room darkened. We cannot give that back — only a
+        // frozen 0, which reads as a broken keyboard. So a dark starting point
+        // restores to `restoreOnQuit`; every lit one restores exactly.
+        let target = initialBrightness < Self.offEpsilon ? Self.restoreOnQuit : initialBrightness
+        backlight.setBrightness(target)
 
-        // Best effort, and it must come *after* the write above: writing the
-        // brightness property is itself what disengages auto-brightness, so
-        // enabling it first would be undone immediately. It has never actually
-        // been observed to re-engage, but it costs nothing on the way out.
-        backlight.setAutoBrightness(true)
+        // Deliberately NOT setAutoBrightness(true) here. That call did not do
+        // what its old comment claimed. Measured on J714s / macOS 26.6.2:
+        //
+        //   * The toggle is never flipped by writing the brightness property.
+        //     It reads ON before our first write, after it, and 25s later —
+        //     while the backlight sits frozen at PWM 0.1 in a 5 lux room. So
+        //     there is no toggle state for us to repair.
+        //   * Setting it true does not re-engage anything. Cycling it
+        //     false -> true left the backlight untouched for 20s in that same
+        //     dark room.
+        //   * But it *is* a real preference, and writing it unconditionally
+        //     clobbered users who had deliberately turned it off: quitting
+        //     switched it back on every time.
+        //
+        // All cost, no benefit. The app never turns the toggle off, so simply
+        // not touching it leaves it exactly as the user set it.
     }
 
     func setCeiling(_ value: Float) {
@@ -125,7 +148,9 @@ final class Limiter {
     /// every sample.
     private static let offEpsilon: Float = 0.00001
 
-    /// Level handed back on quit when the keys would otherwise be left dark.
+    /// Fallback level for quitting when there is nothing worth handing back —
+    /// i.e. the keyboard was already dark when we took it over, so restoring
+    /// what we found would strand the user with a frozen-off keyboard.
     /// Deliberately mid-scale rather than `minVisible`: the point is to leave
     /// no doubt the backlight still works, and PWM 101 in a lit room reads as
     /// every bit as broken as PWM 0.

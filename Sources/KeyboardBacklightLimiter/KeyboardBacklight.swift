@@ -100,6 +100,12 @@ final class KeyboardBacklight {
 
     var isAutoBrightnessOn: Bool { kbc.isAutoBrightnessEnabled(forKeyboard: keyboardID) }
 
+    /// - Warning: This is a **user preference**, and writing it is not the
+    ///   harmless no-op it looks like. It does not re-engage macOS's ambient
+    ///   control (measured: cycling false -> true left the backlight frozen for
+    ///   20s in a 5 lux room), and calling it unconditionally on quit switched
+    ///   the setting back on for users who had deliberately turned it off.
+    ///   `Limiter.stop()` used to do exactly that. Do not reintroduce it.
     @discardableResult
     func setAutoBrightness(_ enabled: Bool) -> Bool {
         kbc.enableAutoBrightness(enabled, forKeyboard: keyboardID)
