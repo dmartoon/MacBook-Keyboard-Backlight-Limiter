@@ -13,10 +13,10 @@ enum UpdateCheck {
     /// is no separate manifest to maintain — and therefore none to forget to
     /// update, which is the failure mode a hand-written appcast invites.
     private static let latestAPI = URL(string:
-        "https://api.github.com/repos/dmartoon/Mac-Keyboard-Backlight-Limiter/releases/latest")!
+        "https://api.github.com/repos/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest")!
 
     static let releasesPage = URL(string:
-        "https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter/releases/latest")!
+        "https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest")!
 
     private static let lastCheckKey = "lastUpdateCheck"
     /// One hour, not one day. A day sounds harmless and is not: after a

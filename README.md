@@ -26,7 +26,7 @@ to get before the keys light up at all.
 
 ## Install
 
-1. Download the `.dmg` from [Releases](https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter/releases/latest)
+1. Download the `.dmg` from [Releases](https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest)
 2. Drag the app into **Applications**
 3. Open it — it appears in the menu bar, not the Dock
 
@@ -110,8 +110,8 @@ for any reason it stays silent.
 ## Building from source
 
 ```bash
-git clone https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter.git
-cd Mac-Keyboard-Backlight-Limiter
+git clone https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter.git
+cd MacBook-Keyboard-Backlight-Limiter
 ./build-app.sh
 open "build/Keyboard Backlight Limiter.app"
 ```

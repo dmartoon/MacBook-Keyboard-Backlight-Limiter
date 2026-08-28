@@ -11,7 +11,7 @@ next release; older ones are not patched.
 | Anything older | ❌ — update first |
 
 If you are running an older build, please reproduce the issue on the
-[latest release](https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter/releases/latest)
+[latest release](https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest)
 before reporting it.
 
 ## Reporting a vulnerability
@@ -19,7 +19,7 @@ before reporting it.
 **Do not open a public issue for a security problem.**
 
 Use GitHub's private vulnerability reporting: go to the
-[Security tab](https://github.com/dmartoon/Mac-Keyboard-Backlight-Limiter/security)
+[Security tab](https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/security)
 and choose **Report a vulnerability**. That gives us a private thread, and it is
 the only channel that keeps the details out of public view until there is a fix.
 
