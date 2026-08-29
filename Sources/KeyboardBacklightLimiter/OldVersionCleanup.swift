@@ -27,6 +27,30 @@ enum OldVersionCleanup {
     /// "let me look", not "no".
     private static let declinedKey = "declinedOldCopyCleanup"
 
+    /// The folders an install can legitimately live in. Used twice, and the
+    /// second use is the one that is easy to forget — see `isInstalled`.
+    private static var applicationRoots: [String] {
+        ["/Applications", NSHomeDirectory() + "/Applications"]
+            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+    }
+
+    /// True when the *running* bundle is itself installed, rather than being
+    /// run from a mounted disk image, Downloads, or a build directory.
+    ///
+    /// Scoping only the removal targets is not enough. Opening the DMG and
+    /// double-clicking the app to try it before installing is a completely
+    /// normal thing to do, and there the offer is actively destructive:
+    /// accepting it moves the user's only installed copy to the Trash and
+    /// re-registers the login item at a `/Volumes/…` path that stops existing
+    /// the moment the image is ejected. They are left with no app and a dead
+    /// login item, having done nothing wrong.
+    ///
+    /// Only an installed copy may retire another one.
+    private static var isInstalled: Bool {
+        let me = Bundle.main.bundleURL.standardizedFileURL.path
+        return applicationRoots.contains { me.hasPrefix($0 + "/") }
+    }
+
     /// Pre-rename copies worth offering to remove.
     ///
     /// Three filters, and dropping any one of them makes this dangerous:
@@ -42,12 +66,13 @@ enum OldVersionCleanup {
     ///   tidy.
     ///
     /// The running bundle is excluded unconditionally, so this can never target
-    /// itself no matter what it is called or where it is running from.
+    /// itself no matter what it is called or where it is running from — and
+    /// `isInstalled` separately requires that the running bundle be an install
+    /// at all before any of this is offered.
     private static var oldCopies: [URL] {
         guard let id = Bundle.main.bundleIdentifier else { return [] }
         let me = Bundle.main.bundleURL.standardizedFileURL
-        let roots = ["/Applications", NSHomeDirectory() + "/Applications"]
-            .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        let roots = applicationRoots
 
         return NSWorkspace.shared.urlsForApplications(withBundleIdentifier: id)
             .map(\.standardizedFileURL)
@@ -73,6 +98,7 @@ enum OldVersionCleanup {
         // this machine has a real old copy in /Applications, which the test
         // would otherwise offer to throw away.
         guard ProcessInfo.processInfo.environment["KBL_SELFTEST"] == nil else { return }
+        guard isInstalled else { return }
         guard !UserDefaults.standard.bool(forKey: declinedKey) else { return }
 
         let copies = oldCopies
