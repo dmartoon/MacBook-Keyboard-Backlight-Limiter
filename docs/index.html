@@ -34,11 +34,13 @@
    here with the gradient's own end stop, so overscrolling down is seamless.
    Overscrolling *up* shows this same colour rather than the #17140f the
    gradient starts on; one canvas colour cannot match both ends, and both are
-   near-black, so the seam at the top is faint. color-scheme keeps the browser's
-   own surfaces, scrollbars especially, dark to match. */
+   near-black, so the seam at the top is faint.
+
+   A `color-scheme: dark` was here too, for dark scrollbars. It was removed:
+   Safari also uses it to tint its own chrome, so it changed the look of the
+   browser around the page. The canvas colour alone fixes the white. */
 html {
   -webkit-text-size-adjust: 100%;
-  color-scheme: dark;
   background-color: #070605;
 }
 
