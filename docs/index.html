@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dim Keys — keyboard backlight limiter for MacBook</title>
-<meta name="description" content="A macOS menu-bar app that caps how bright your MacBook keyboard backlight can get, and decides when it comes on from the ambient light sensor.">
+<meta name="description" content="A macOS menu-bar app for MacBook. Set a brightness limit for your keyboard and adjust ambient light sensitivity to control when the backlight turns on.">
 <link rel="icon" href="icon.png" type="image/png">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Dim Keys">
-<meta property="og:description" content="Cap how bright your MacBook keyboard backlight can get, and choose how dark it has to be before the keys light up at all.">
+<meta property="og:description" content="Set a brightness limit for your keyboard and adjust ambient light sensitivity to control when the backlight turns on.">
 <meta property="og:image" content="https://dimkeys.com/icon.png">
 <meta name="twitter:card" content="summary_large_image">
 
 <style>
 :root {
-  --bg:        #000;
-  --bg-raised: #141417;
-  --line:      #262629;
+  --bg:        #0c0a08;
+  --bg-raised: #16130f;
+  --line:      #282420;
   --ink:       #f2f0ec;
   --ink-dim:   #a3a09a;
   --ink-faint: #6f6c68;
@@ -31,7 +31,13 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* docs/screenshot.png is a transparent cutout, so the page is free to carry
+     a real gradient. It used to be locked to pure #000 because the screenshot
+     was black to its edges and any lift — measured, even #050506 — showed it
+     as a rectangle. Re-flattening that asset would bring the lock back. */
+  background: linear-gradient(180deg, #17140f 0%, var(--bg) 40%, #070605 100%);
+  background-repeat: no-repeat;
+  min-height: 100vh;
   color: var(--ink);
   font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -41,7 +47,7 @@ body {
 a { color: var(--glow); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-.wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+.wrap { max-width: 668px; margin: 0 auto; padding: 0 24px; }
 
 /* ── hero ─────────────────────────────────────────────────────────────── */
 
@@ -59,7 +65,7 @@ a:hover { text-decoration: underline; }
   top: -220px; left: 50%;
   width: 900px; height: 600px;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse at center, rgba(246,217,159,.13), rgba(246,217,159,0) 62%);
+  background: radial-gradient(ellipse at center, rgba(255,232,190,.17), rgba(246,217,159,0) 62%);
   pointer-events: none;
 }
 
@@ -68,7 +74,10 @@ a:hover { text-decoration: underline; }
 .appicon {
   width: 112px; height: 112px;
   image-rendering: -webkit-optimize-contrast;
-  filter: drop-shadow(0 14px 34px rgba(0,0,0,.55));
+  /* Was drop-shadow(0 14px 34px rgba(0,0,0,.55)). A heavy black shadow behind a
+     dark squircle is invisible on #000 but reads as a smudged box the moment
+     the page lifts. A warm halo suits a backlight app better anyway. */
+  filter: drop-shadow(0 0 28px rgba(246,217,159,.22));
 }
 
 h1 {
@@ -146,23 +155,16 @@ code {
 
 /* ── screenshot ───────────────────────────────────────────────────────── */
 
-/* The screenshot PNG is pure #000 out to its edges, so --bg is pure black on
-   purpose: the panel appears to sit on the page rather than in a box. Softening
-   --bg to a near-black brings the rectangle's edge straight back. */
-.shot { text-align: center; padding: 56px 0 8px; }
+.shot { text-align: center; padding: 56px 0 40px; }
 
 .shot img {
   width: 326px;
   max-width: 100%;
   height: auto;
-  filter: drop-shadow(0 28px 60px rgba(0,0,0,.7));
+  /* follows the cutout's alpha, so it hugs the rounded panel and its arrow */
+  filter: drop-shadow(0 26px 56px rgba(0,0,0,.75));
 }
 
-.shot figcaption {
-  margin-top: 20px;
-  font-size: 14px;
-  color: var(--ink-faint);
-}
 
 /* ── sections ─────────────────────────────────────────────────────────── */
 
@@ -267,18 +269,6 @@ ol.steps li::before {
   text-align: center;
 }
 
-.note {
-  max-width: 620px;
-  margin-top: 6px;
-  padding: 16px 18px;
-  border-left: 2px solid var(--line);
-  background: var(--bg-raised);
-  border-radius: 0 10px 10px 0;
-  font-size: 14.5px;
-  color: var(--ink-faint);
-}
-.note strong { color: var(--ink-dim); font-weight: 600; }
-
 /* ── footer ───────────────────────────────────────────────────────────── */
 
 footer {
@@ -313,8 +303,8 @@ footer nav a {
     <h1>Dim Keys</h1>
     <p class="tagline">Keyboard backlight limiter for MacBook</p>
     <p class="lede">
-      Cap how bright your keyboard backlight can get, and decide for yourself
-      how dark the room has to be before the keys light up at all.
+      Set a brightness limit for your keyboard and adjust ambient light
+      sensitivity to control when the backlight turns on.
     </p>
 
     <div class="download">
@@ -326,7 +316,7 @@ footer nav a {
         </svg>
         Download for macOS
       </a>
-      <p class="meta" id="meta">Free<span class="sep">·</span>Universal<span class="sep">·</span>macOS 13 or later</p>
+      <p class="meta" id="meta">Free<span class="sep">·</span>Universal<span class="sep">·</span>&lt; 2 MB<span class="sep">·</span>macOS 13 or later</p>
       <p class="secondary">
         <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter">Source on GitHub</a><span class="sep">·</span><a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases">All releases</a>
       </p>
@@ -336,7 +326,6 @@ footer nav a {
 
 <figure class="shot">
   <img src="screenshot.png" width="326" height="404" alt="The Dim Keys panel: a maximum brightness limit with Off, Min, Med and Max, a slider, and an ambient light sensitivity control.">
-  <figcaption>The whole app. It lives in the menu bar, not the Dock.</figcaption>
 </figure>
 
 <main class="wrap">
@@ -345,45 +334,40 @@ footer nav a {
     <h2>The two controls macOS is missing</h2>
     <div class="prose">
       <p>
-        macOS gives you a brightness slider and an auto-brightness checkbox, and
-        nothing in between. You cannot tell it <strong>how eager</strong> to be. In a dim
-        room it lights the keys brighter than you want, and in ordinary room
-        light it suppresses them entirely even when you would rather have a
-        faint glow.
+        macOS gives you only two native settings: a brightness slider and an
+        auto-brightness toggle. You cannot control when the backlight will turn
+        on, and how bright it will be at the same time.
       </p>
       <p>
         Dim Keys reads the ambient light sensor once a second and drives the
-        backlight itself, from two settings you choose.
+        backlight itself, from two settings that you have full control of.
       </p>
     </div>
 
     <div class="cards">
       <div class="card">
-        <h3>A ceiling it never exceeds</h3>
-        <p>Four presets, or any level in between on the slider.</p>
+        <h3>Maximum brightness limit</h3>
+        <p>The level the backlight will not go past, however dark it gets.</p>
         <dl class="rows">
-          <div class="row"><dt>Off</dt><dd>Keys stay dark at every light level</dd></div>
-          <div class="row"><dt>Min</dt><dd>The dimmest the hardware can light</dd></div>
+          <div class="row"><dt>Off</dt><dd>Dark at every light level</dd></div>
+          <div class="row"><dt>Min</dt><dd>The dimmest option</dd></div>
           <div class="row"><dt>Med</dt><dd>35%</dd></div>
           <div class="row"><dt>Max</dt><dd>No cap</dd></div>
         </dl>
       </div>
 
       <div class="card">
-        <h3>Sensitivity you set yourself</h3>
-        <p>How dark it must be before the keys come on at all.</p>
+        <h3>Ambient light sensitivity</h3>
+        <p>The light level at which the backlight turns on at all.</p>
         <dl class="rows">
-          <div class="row"><dt>Low</dt><dd>Below 7 lux — an unlit room</dd></div>
-          <div class="row"><dt>Med</dt><dd>Below 48 lux — a dimly lit room</dd></div>
-          <div class="row"><dt>High</dt><dd>Below 120 lux — normal room light</dd></div>
+          <div class="row"><dt>Low</dt><dd>&lt; 7 lux — an unlit room</dd></div>
+          <div class="row"><dt>Med</dt><dd>&lt; 48 lux — a dim room</dd></div>
+          <div class="row"><dt>High</dt><dd>&lt; 120 lux — normal room light</dd></div>
         </dl>
       </div>
     </div>
 
-    <p class="note" style="margin-top:22px">
-      <strong>High is more eager than macOS itself.</strong> It lights the keys
-      in ordinary room light, where stock macOS gives you nothing.
-    </p>
+
   </section>
 
   <section>
@@ -391,23 +375,24 @@ footer nav a {
     <div class="facts">
       <div>
         <h3>Stays out of the way</h3>
-        <p>One menu bar icon, no Dock icon, no window. Idle CPU measures 0.0% — it
-           sleeps until the light actually changes. You can hide the icon too.</p>
+        <p>One menu bar icon, no Dock icon, no window. Idle CPU measures 0.0%
+           and it sleeps until the light actually changes. You can hide the
+           icon too.</p>
       </div>
       <div>
         <h3>Nothing leaves your Mac</h3>
-        <p>The only network request it ever makes is asking GitHub for the latest
-           version number. No accounts, no analytics, no telemetry.</p>
+        <p>The only request it ever makes is asking GitHub whether there is a
+           newer version. No accounts, no analytics, no telemetry, and it never
+           installs anything by itself.</p>
       </div>
       <div>
         <h3>Signed and notarized by Apple</h3>
-        <p>It opens with a double-click — no Gatekeeper detour, no right-click
-           trick. Universal, so it runs native on Apple Silicon and Intel.</p>
+        <p>Universal, so it runs native on Apple Silicon and Intel.</p>
       </div>
       <div>
         <h3>Open source, MIT</h3>
-        <p>About 1.5 MB, one binary, no frameworks bundled. Read it, build it
-           yourself, or take it apart.</p>
+        <p>Under 2 MB installed, one binary, no bundled frameworks, about
+           1,900 lines of Swift. Read it, build it yourself, or take it apart.</p>
       </div>
     </div>
   </section>
@@ -419,12 +404,6 @@ footer nav a {
       <li>Drag <strong>Dim Keys</strong> into <strong>Applications</strong>.</li>
       <li>Open it. It appears in the menu bar — click the icon for the panel.</li>
     </ol>
-    <p class="note">
-      <strong>Keep it in Applications if you use Launch at login.</strong>
-      macOS registers the login item at whatever path the app is sitting in, so
-      leaving it in your Downloads folder means the login item breaks the moment
-      you tidy up.
-    </p>
   </section>
 
   <section>
@@ -435,12 +414,9 @@ footer nav a {
         Silicon or Intel.
       </p>
       <p>
-        <strong>macOS 13 or later</strong> — though everything has only been
-        developed and verified on macOS 26, so anything earlier is genuinely
-        untested rather than merely unsupported. There is no public API for
-        keyboard backlight control on macOS at all, so the app uses a private
-        one. If that differs on your version it does not misbehave; it simply
-        reports that no keyboard backlight was found. If that happens,
+        <strong>macOS 13 or later.</strong> Everything has been developed and
+        verified on macOS 26 only. If Dim Keys tells you it found no keyboard
+        backlight,
         <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/issues">open an issue</a>
         and say which macOS version you are on.
       </p>
@@ -482,7 +458,7 @@ footer nav a {
       var bits = ['Free'];
       var version = String(rel.tag_name || '').replace(/^v/, '');
       if (version) { bits.push('Version ' + version); }
-      if (dmg && dmg.size) { bits.push((dmg.size / 1048576).toFixed(1) + ' MB'); }
+      bits.push('&lt; 2 MB');
       bits.push('macOS 13 or later');
       if (bits.length) {
         meta.innerHTML = bits.map(function (b) {

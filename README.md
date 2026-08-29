@@ -1,136 +1,231 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="Dim Keys icon">
+  <img src="docs/icon.png" width="128" alt="">
 </p>
 
 <h1 align="center">Dim Keys</h1>
 
 <p align="center">
-  <b>Keyboard backlight limiter for MacBook.</b><br>
-  A menu-bar app that caps how bright your keyboard backlight can get,
-  and decides when it comes on from the ambient light sensor.
+  <b>Keyboard backlight limiter for MacBook.</b>
 </p>
 
 <p align="center">
   <img src="docs/screenshot.png" width="320" alt="The Dim Keys panel">
 </p>
 
-## Why
+<p align="center">
+  <a href="https://dimkeys.com"><b>dimkeys.com</b></a> · <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest">Download</a> · <a href="LICENSE">MIT</a>
+</p>
 
-macOS gives you a keyboard backlight slider and an auto-brightness checkbox, and
-nothing in between. You cannot tell it *how eager* to be. In a dim room it often
-lights the keys brighter than you want, and in normal room light it suppresses
-them entirely even when you would rather have a faint glow.
+A macOS menu-bar app that caps how bright the keyboard backlight can get and
+drives it from the ambient light sensor, with a sensitivity you choose.
 
-This app gives you the two controls that are actually missing: a **ceiling** the
-backlight will never exceed, and a **sensitivity** that decides how dark it has
-to get before the keys light up at all.
+**If you just want to use it, [dimkeys.com](https://dimkeys.com) is the better
+page** — it has the download, what the settings do, and what to expect. This one
+is about how the app works and why it is built the way it is.
 
-## Install
+## The constraint everything else follows from
 
-1. Download the `.dmg` from [Releases](https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest)
-2. Drag **Dim Keys** into **Applications**
-3. Open it — it appears in the menu bar, not the Dock
+There is no public API for keyboard backlight control on macOS. Exactly one call
+reaches the hardware from an unprivileged process:
 
-Moving it to `/Applications` matters if you use **Launch at login**: macOS
-registers the login item at whatever path the app is sitting in, so leaving it
-in `~/Downloads` means the login item breaks the moment you tidy up.
+```objc
+[BrightnessSystemClient setProperty:value
+                            withKey:@"KeyboardBacklightBrightness"
+                         keyboardID:id]
+```
 
-The app is signed with a Developer ID and notarized by Apple, so it opens
-normally. A build you compiled yourself is unsigned and Gatekeeper will block
-it — allow it under System Settings › Privacy & Security.
+**Writing that property permanently disengages macOS's own keyboard
+auto-brightness.** macOS treats the write as a manual override — the same as
+dragging the System Settings slider — and it does not resume. Not on a timeout,
+not when the ambient level changes, not when the app quits. Only pressing F5/F6
+hands control back.
 
-## Settings
+That one fact rules out the design everyone reaches for first. A limiter that
+sits back and clamps the backlight only when it exceeds your ceiling would work
+exactly once: the first clamp kills the ambient response, and nothing ever
+raises the keys again. It cannot be a limiter in the passive sense.
 
-**Maximum brightness limit** — the ceiling the backlight will never exceed.
+So the app owns the whole curve. Read the lux, compute the brightness, write it,
+every time — the ceiling is an input to that calculation rather than a lid
+placed on top of somebody else's.
 
-| | |
-|---|---|
-| **Off** | Keys stay dark at every light level |
-| **Min** | The dimmest the hardware can light without being off |
-| **Med** | 35% |
-| **Max** | No cap |
+## The curve
 
-The slider sets any ceiling between the dimmest lit state and full. It is
-disabled while **Off** is selected, since a maximum brightness means nothing
-when the keys are held dark.
+```
+lux ≥ offLux                    →  0
+lux < onLux, or already lit     →  max(min(minVisible, ceiling),
+                                       ceiling × min(1, darkness × 1.4))
 
-**Ambient light sensitivity** — how dark it must be before the keys come on.
+darkness = 1 − lux / offLux
+```
 
-| | Comes on below | Goes off at |
+| Sensitivity | Comes on below | Goes off at |
 |---|---|---|
-| **Low** | 7 lux — effectively an unlit room | 10 lux |
-| **Med** | 48 lux — a dimly lit room | 60 lux |
-| **High** | 120 lux — normal room light | 150 lux |
+| Low | 7 lux | 10 lux |
+| Med | 48 lux | 60 lux |
+| High | 120 lux | 150 lux |
 
-The gap between the two numbers is deliberate. Ambient readings jitter by
-several lux, and without it the keys would blink on and off at the boundary.
+Four things in there are load-bearing:
 
-**High is more eager than macOS itself.** It will light the keys in ordinary
-room light, where stock macOS suppresses them completely.
+- **The gap between `onLux` and `offLux` is hysteresis.** Ambient readings jitter
+  by several lux, and with a single threshold the keys blink on and off at the
+  boundary. A proportional band was tried and is too narrow at low thresholds,
+  hence explicit on/off points per sensitivity.
+- **`× 1.4` lets the brightness saturate at the ceiling before pitch black**, so
+  the top of the range is reachable in a normally dark room rather than only in
+  a darkroom.
+- **`minVisible` is a floor, not decoration.** Scaling a low ceiling by the
+  ambient factor otherwise lands below what the hardware can actually show, so
+  at the Min preset every "lit" state came out invisible and changing the
+  sensitivity looked like it did nothing.
+- **A ceiling of `0` collapses the whole expression to `0`** with no special
+  case, and the result equals the current brightness, so the deadband writes
+  nothing further. That is what keeps the Off preset from becoming a write storm.
 
-## How it works
+## What the hardware actually does
 
-The app reads the ambient light sensor once a second and computes the whole
-brightness curve itself, then writes the result.
+Measured on this machine (`Mac17,9`, M5 Pro, macOS 26.6.2) by writing values and
+reading `backlightLevelForKeyboard:` back:
 
-It computes the *whole* curve rather than just clamping macOS's value because it
-has to. Writing the keyboard brightness property is treated by macOS as a manual
-override — exactly like dragging the System Settings slider — and it permanently
-disengages macOS's own auto-brightness. So a limiter that only clamps when the
-value is too high would break the ambient response the first time it fired, and
-nothing would ever raise the backlight again.
+- PWM range is **100–14660**. The normalized→PWM mapping is linear,
+  `PWM = 100 + n × 14560` — **except that `0` maps to PWM 0.**
+- So **PWM 1–99 does not exist.** It is a cliff, not a floor: zero is dark, and
+  any positive value at all lands at PWM 100 or above. The entire span from
+  `1e-7` to `1e-4` covers about 1.5 PWM steps out of 14560, which is not
+  perceptible.
 
-One consequence: after you quit, macOS does not resume driving the backlight.
-The app therefore hands back a plainly lit keyboard on the way out rather than
-leaving you with dark keys. Pressing F5/F6 re-engages macOS's own control.
+That is why the panel's slider runs **1–100% rather than 0–100%**, and why a
+genuinely dark keyboard is the separate **Off** preset rather than a slider
+position. Labelling the dimmest lit state "0%" read as though the keyboard were
+off, and there is no meaningful travel below it to expose.
 
-## Updates
+## Things that do not work
 
-The app checks GitHub for a newer release at launch, every six hours, and
-whenever you open the panel — at most one request an hour. If there is one, the
-version in the corner of the panel becomes a link to the release page, and you
-get a notification, so the news still reaches you when the menu bar icon is
-hidden or you simply have not opened the panel in weeks. macOS asks for
-notification permission the first time there is actually something to tell you,
-and each release is announced once.
+Each was verified broken here, on macOS 26.6.2. They look plausible, several of
+them return success, and none of them move the hardware.
 
-It only ever asks GitHub what the latest release tag is — nothing about you or
-your machine is sent, and nothing is installed automatically. If the check fails
-for any reason it stays silent.
+| Approach | What happens |
+|---|---|
+| `IOHIDDeviceSetReport` on the Keyboard Backlight HID device | Returns `kIOReturnSuccess`, hardware never changes |
+| `IOHIDDeviceGetReport` / `IOHIDDeviceGetValue` | `kIOReturnUnsupported` — the device is write-only to us |
+| `IOHIDDeviceOpen` with `kIOHIDOptionsTypeSeizeDevice`, then write at 20 Hz | Seize succeeds, writes still dropped |
+| `KeyboardBrightnessClient.setBrightness:fadeSpeed:commit:forKeyboard:` | Returns `true`, no effect |
+| `KeyboardBrightnessClient.enableAutoBrightness:` then write | No effect |
+| Running as root | Irrelevant — the gate is entitlement-based, not uid-based |
 
-## Requirements
+`corebrightnessd` holds `com.apple.hid.manager.user-access-protected`, and the
+driver honours only clients carrying it. Apple does not grant it to third
+parties, **so a privileged `SMAppService` helper daemon hits exactly the same
+wall** — that is the workaround worth not spending a weekend on.
 
-- Apple Silicon or Intel (the app ships universal)
-- macOS 13 or later — but everything has only been developed and verified on
-  macOS 26, so anything earlier is genuinely untested. The app talks to a
-  private framework; if that framework differs on your version, it does not
-  misbehave, it just reports that no keyboard backlight was found. If that
-  happens, please open an issue and say which macOS version you are on.
-- A MacBook with a backlit keyboard and an ambient light sensor.
+## Architecture
 
-## Building from source
+About 1,900 lines of Swift, no dependencies, no bundled frameworks.
+
+```
+main.swift               NSApplication bootstrap, .accessory policy
+AppDelegate.swift        Menu bar item and the NSPopover panel — one page, no settings screen
+KeyboardBacklight.swift  CoreBrightness bridge: read, write, change notifications
+AmbientLightSensor.swift IO registry walk for a node publishing CurrentLux
+Limiter.swift            Owns the lux→brightness curve and writes the result
+Settings.swift           Presets, sensitivity thresholds, UserDefaults
+LaunchAtLogin.swift      SMAppService wrapper
+UpdateCheck.swift        GitHub releases check — notifies, never installs
+UpdateNotifier.swift     The notification for it
+OldVersionCleanup.swift  Offers once to retire a pre-rename copy
+MenuBarIcon.swift        The status item glyph, drawn in code
+tools/make-icon.swift    Regenerates AppIcon.icns — the app icon is code, not a blob
+```
+
+It is **event-driven**: `registerNotificationForKeys:keyboardID:block:` fires on
+every brightness change, and a 1 Hz timer samples lux, which has no notification
+of its own. Measured idle CPU is 0.0%.
+
+Two details that are easy to get wrong if you touch them:
+
+- **The ambient sensor is found by walking the IO registry for any node
+  publishing `CurrentLux`**, not by class name — the class is machine-specific.
+  The walk can also come back empty on a login-time launch, both because the
+  property may not be published yet and because a recursive registry iterator is
+  invalidated by any change to the tree it is walking. `find()` therefore checks
+  `IOIteratorIsValid` and only reports "no sensor" from a walk that ran to
+  completion, and the panel is rebuilt if a sensor turns up late.
+- **The panel is absolutely framed at one fixed height**, so anything that adds
+  a row reflows everything under it. The update notice reuses the version
+  label's slot for exactly this reason.
+
+## Build and test
 
 ```bash
-git clone https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter.git
-cd MacBook-Keyboard-Backlight-Limiter
-./build-app.sh
+./build-app.sh                  # ad-hoc signed, arm64, local use only
 open "build/Dim Keys.app"
 ```
 
-`release.sh` produces the distributable build instead — universal, Developer ID
-signed with Hardened Runtime, notarized and stapled. It needs a Developer ID
-certificate and stored notarization credentials.
+```bash
+# Popover layout regression test — must print PASS
+KBL_SELFTEST=1 .build/release/KeyboardBacklightLimiter
+```
+
+The self-test shows the popover against a real window and asserts that no
+subview escapes the bounds and that the bottom row does not collide. It covers
+both panel layouts — with and without an ambient sensor — the rebuild between
+them, and the update-available state. The bottom row is positioned from measured
+text, so rewording a button title is precisely the change that would silently
+push the version label underneath it.
+
+One caveat worth knowing before you run it: **launched from inside the `.app`
+bundle it reads and writes your real preferences domain.** The bare
+`.build/release` binary has no `Info.plist`, so it gets a throwaway domain and
+cannot touch anything.
+
+```bash
+./release.sh                    # universal, Developer ID, hardened runtime, notarized, stapled
+./release.sh --no-notarize      # packaging only, skips the Apple round trips
+```
+
+`release.sh` is what produces a shippable artifact; `build-app.sh` output is not
+shippable, since notarization requires a secure timestamp and the hardened
+runtime. Hardened Runtime does **not** break the private framework — library
+validation permits it because `CoreBrightness` is Apple-signed, so no
+`disable-library-validation` exemption is needed.
+
+`CFBundleShortVersionString` is edited by hand in `Resources/Info.plist`.
+`CFBundleVersion` is injected by `release.sh` from `git rev-list --count HEAD`,
+because a hand-maintained build number does not error when it goes stale — it
+just silently stops anyone from being offered the update.
 
 ## Known limitations
 
-- **It uses a private framework.** There is no public API for keyboard backlight
-  control on macOS at all — `BrightnessSystemClient` is the only write path that
-  reaches the hardware from an unprivileged process. A future macOS release
-  could rename or remove it, in which case the app fails safely rather than
-  misbehaving.
-- **Not distributable on the Mac App Store**, for the same reason.
-- Hiding the menu bar icon leaves the app running. Opening the app again brings
-  the icon back — that is the only way to reach the settings afterwards.
+- **It depends on a private framework.** A future macOS release could rename or
+  remove it. The app fails safely rather than misbehaving:
+  `KeyboardBacklight.open()` returns nil and the panel reports that no keyboard
+  backlight was found, with the menu bar item still there so you can quit.
+- **Not distributable on the Mac App Store.** The app's entire function is a
+  private framework and there is nothing public to port to, so this is an
+  automatic rejection rather than a risk to manage.
+- **macOS does not resume driving the backlight after the app quits.** `stop()`
+  restores the brightness captured before the first write, falling back to a
+  mid-scale value when that was itself dark, so quitting never strands you with
+  a keyboard that reads as broken. The fallback is not gated on ambient level,
+  so quitting in a bright room with the keys dark lights them where macOS would
+  have left them off.
+- **The app overrides anything else writing the same property**, pulling an
+  external write back to its own target within about half a second. That is the
+  design working, but it puts System Settings › Keyboard › *"Turn keyboard
+  backlight off after inactivity"* at risk if that timeout is implemented the
+  same way. Unverified either way. If it does conflict, the fix is to watch
+  `HIDIdleTime` and stop driving past the same threshold, not to weaken the
+  write path.
+- **Below macOS 26 is untested rather than unsupported.** The deployment target
+  is 13.0 and the binary will launch there; nothing older has been exercised.
+
+## Contributing
+
+Issues and pull requests are welcome. Bug reports are much more useful with the
+macOS version and the Mac model in them — a good deal of this app's behaviour is
+hardware-specific, and the numbers above were all measured on one machine.
+
+Security issues: see [SECURITY.md](SECURITY.md).
 
 ## License
 
