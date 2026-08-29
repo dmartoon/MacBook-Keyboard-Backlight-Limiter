@@ -27,7 +27,20 @@
 
 * { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* The gradient below lives on <body> and is no-repeat, so it is painted over
+   the body box and nowhere else. Everything outside it falls through to the
+   canvas — and the canvas defaulted to white, which is what you hit when Safari
+   rubber-bands past the bottom of the page. The canvas is therefore painted
+   here with the gradient's own end stop, so overscrolling down is seamless.
+   Overscrolling *up* shows this same colour rather than the #17140f the
+   gradient starts on; one canvas colour cannot match both ends, and both are
+   near-black, so the seam at the top is faint. color-scheme keeps the browser's
+   own surfaces, scrollbars especially, dark to match. */
+html {
+  -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
+  background-color: #070605;
+}
 
 body {
   margin: 0;
