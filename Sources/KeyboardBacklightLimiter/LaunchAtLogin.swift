@@ -24,6 +24,24 @@ enum LaunchAtLogin {
         }
     }
 
+    /// Forces the login item to point at *this* bundle's path.
+    ///
+    /// `set(true)` returns early when the status already reads enabled, which
+    /// is exactly wrong after the pre-rename copy has been removed: both
+    /// bundles carry the same identifier, so the status may be that copy's
+    /// registration and still name a path that no longer exists. Unregistering
+    /// first is what makes the re-register actually rewrite it.
+    @discardableResult
+    static func reregister() -> String? {
+        do {
+            try? SMAppService.mainApp.unregister()
+            try SMAppService.mainApp.register()
+            return nil
+        } catch {
+            return (error as NSError).localizedDescription
+        }
+    }
+
     /// SMAppService registers the bundle at its current path, so running from a
     /// temporary or Downloads location produces a login item that breaks when
     /// the app is moved.
