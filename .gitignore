@@ -12,5 +12,6 @@ dist/
 # sign, notarize or publish the app.
 CLAUDE.md
 pick-min.sh
+dns-switch.sh
 tools/pick-min.m
 tools/icon-reference.png
