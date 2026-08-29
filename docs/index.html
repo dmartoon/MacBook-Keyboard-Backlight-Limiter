@@ -29,19 +29,23 @@
 
 /* The gradient below lives on <body> and is no-repeat, so it is painted over
    the body box and nowhere else. Everything outside it falls through to the
-   canvas — and the canvas defaulted to white, which is what you hit when Safari
-   rubber-bands past the bottom of the page. The canvas is therefore painted
-   here with the gradient's own end stop, so overscrolling down is seamless.
-   Overscrolling *up* shows this same colour rather than the #17140f the
-   gradient starts on; one canvas colour cannot match both ends, and both are
-   near-black, so the seam at the top is faint.
+   canvas — and the canvas had no colour at all, so it defaulted to white. That
+   is what Safari showed when it rubber-banded past the page, and it is also
+   why Safari's own toolbar tinted light over a dark page: the browser takes
+   that tint from the canvas.
+
+   One canvas colour cannot match both ends of a gradient. This is the *start*
+   stop, chosen 2026-08-29, so overscrolling up is seamless; overscrolling down
+   shows it as a slightly lighter patch against the #070605 the gradient ends
+   on. Swap it for #070605 to trade one for the other.
 
    A `color-scheme: dark` was here too, for dark scrollbars. It was removed:
    Safari also uses it to tint its own chrome, so it changed the look of the
-   browser around the page. The canvas colour alone fixes the white. */
+   browser around the page more than intended. The canvas colour alone fixes
+   the white. */
 html {
   -webkit-text-size-adjust: 100%;
-  background-color: #070605;
+  background-color: #17140f;
 }
 
 body {
