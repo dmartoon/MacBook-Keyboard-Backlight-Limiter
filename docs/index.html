@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dim Keys — keyboard backlight limiter for MacBook</title>
+<meta name="description" content="A macOS menu-bar app that caps how bright your MacBook keyboard backlight can get, and decides when it comes on from the ambient light sensor.">
+<link rel="icon" href="icon.png" type="image/png">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Dim Keys">
+<meta property="og:description" content="Cap how bright your MacBook keyboard backlight can get, and choose how dark it has to be before the keys light up at all.">
+<meta property="og:image" content="https://dimkeys.com/icon.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+:root {
+  --bg:        #000;
+  --bg-raised: #141417;
+  --line:      #262629;
+  --ink:       #f2f0ec;
+  --ink-dim:   #a3a09a;
+  --ink-faint: #6f6c68;
+  --glow:      #f6d99f;
+  --glow-hot:  #fff0d2;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--glow); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+
+.hero {
+  position: relative;
+  text-align: center;
+  padding: 88px 0 8px;
+  overflow: hidden;
+}
+
+/* The warm bloom behind the icon — the same light the app is about. */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -220px; left: 50%;
+  width: 900px; height: 600px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(246,217,159,.13), rgba(246,217,159,0) 62%);
+  pointer-events: none;
+}
+
+.hero > * { position: relative; }
+
+.appicon {
+  width: 112px; height: 112px;
+  image-rendering: -webkit-optimize-contrast;
+  filter: drop-shadow(0 14px 34px rgba(0,0,0,.55));
+}
+
+h1 {
+  margin: 22px 0 0;
+  font-size: 58px;
+  line-height: 1.05;
+  letter-spacing: -.028em;
+  font-weight: 700;
+}
+
+.tagline {
+  margin: 10px 0 0;
+  font-size: 20px;
+  color: var(--ink-dim);
+  letter-spacing: -.01em;
+}
+
+.lede {
+  max-width: 560px;
+  margin: 22px auto 0;
+  font-size: 17px;
+  color: var(--ink-dim);
+}
+
+/* ── download ─────────────────────────────────────────────────────────── */
+
+.download { margin-top: 36px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 30px;
+  border-radius: 13px;
+  background: linear-gradient(180deg, var(--glow-hot), var(--glow));
+  color: #16130d;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  box-shadow: 0 10px 30px rgba(246,217,159,.16), inset 0 1px 0 rgba(255,255,255,.5);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 38px rgba(246,217,159,.24), inset 0 1px 0 rgba(255,255,255,.5);
+}
+.btn:active { transform: translateY(0); }
+.btn svg { flex: none; }
+
+.meta {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+.sep { opacity: .4; padding: 0 7px; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: .88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.secondary {
+  margin: 18px 0 0;
+  font-size: 14.5px;
+  color: var(--ink-faint);
+}
+.secondary a { color: var(--ink-dim); }
+
+/* ── screenshot ───────────────────────────────────────────────────────── */
+
+/* The screenshot PNG is pure #000 out to its edges, so --bg is pure black on
+   purpose: the panel appears to sit on the page rather than in a box. Softening
+   --bg to a near-black brings the rectangle's edge straight back. */
+.shot { text-align: center; padding: 56px 0 8px; }
+
+.shot img {
+  width: 326px;
+  max-width: 100%;
+  height: auto;
+  filter: drop-shadow(0 28px 60px rgba(0,0,0,.7));
+}
+
+.shot figcaption {
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--ink-faint);
+}
+
+/* ── sections ─────────────────────────────────────────────────────────── */
+
+section { padding: 64px 0; border-top: 1px solid var(--line); }
+section:first-of-type { border-top: 0; }
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 27px;
+  letter-spacing: -.02em;
+  font-weight: 650;
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  letter-spacing: -.01em;
+  font-weight: 600;
+}
+
+p { margin: 0 0 16px; }
+p:last-child { margin-bottom: 0; }
+
+.prose { max-width: 620px; color: var(--ink-dim); }
+.prose strong { color: var(--ink); font-weight: 600; }
+
+/* ── the two controls ─────────────────────────────────────────────────── */
+
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 30px;
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.card p { color: var(--ink-dim); font-size: 15px; }
+
+.rows { margin-top: 18px; }
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14.5px;
+}
+.row:first-child { border-top: 0; }
+
+.row dt { font-weight: 600; color: var(--ink); flex: none; }
+.row dd { margin: 0; color: var(--ink-faint); text-align: right; }
+
+/* ── feature strip ────────────────────────────────────────────────────── */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 30px 40px;
+  margin-top: 30px;
+}
+
+.facts p { font-size: 15px; color: var(--ink-dim); }
+
+/* ── install ──────────────────────────────────────────────────────────── */
+
+ol.steps {
+  max-width: 620px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+ol.steps li {
+  position: relative;
+  padding: 0 0 20px 44px;
+  color: var(--ink-dim);
+  font-size: 15.5px;
+}
+
+ol.steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0; top: -1px;
+  width: 26px; height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--glow);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+
+.note {
+  max-width: 620px;
+  margin-top: 6px;
+  padding: 16px 18px;
+  border-left: 2px solid var(--line);
+  background: var(--bg-raised);
+  border-radius: 0 10px 10px 0;
+  font-size: 14.5px;
+  color: var(--ink-faint);
+}
+.note strong { color: var(--ink-dim); font-weight: 600; }
+
+/* ── footer ───────────────────────────────────────────────────────────── */
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 40px 0 56px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-faint);
+}
+
+footer nav { margin-bottom: 14px; }
+
+footer nav a {
+  color: var(--ink-dim);
+  padding: 0 10px;
+}
+
+@media (max-width: 720px) {
+  .hero { padding-top: 60px; }
+  h1 { font-size: 42px; }
+  .tagline { font-size: 18px; }
+  .cards, .facts { grid-template-columns: 1fr; }
+  section { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img class="appicon" src="icon.png" width="112" height="112" alt="">
+    <h1>Dim Keys</h1>
+    <p class="tagline">Keyboard backlight limiter for MacBook</p>
+    <p class="lede">
+      Cap how bright your keyboard backlight can get, and decide for yourself
+      how dark the room has to be before the keys light up at all.
+    </p>
+
+    <div class="download">
+      <a class="btn" id="download"
+         href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest">
+        <svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 1.5v8.5m0 0L4.75 6.75M8 10l3.25-3.25M2 11.5v1A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5v-1"
+                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Download for macOS
+      </a>
+      <p class="meta" id="meta">Free<span class="sep">·</span>Universal<span class="sep">·</span>macOS 13 or later</p>
+      <p class="secondary">
+        <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter">Source on GitHub</a><span class="sep">·</span><a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases">All releases</a>
+      </p>
+    </div>
+  </div>
+</header>
+
+<figure class="shot">
+  <img src="screenshot.png" width="326" height="404" alt="The Dim Keys panel: a maximum brightness limit with Off, Min, Med and Max, a slider, and an ambient light sensitivity control.">
+  <figcaption>The whole app. It lives in the menu bar, not the Dock.</figcaption>
+</figure>
+
+<main class="wrap">
+
+  <section>
+    <h2>The two controls macOS is missing</h2>
+    <div class="prose">
+      <p>
+        macOS gives you a brightness slider and an auto-brightness checkbox, and
+        nothing in between. You cannot tell it <strong>how eager</strong> to be. In a dim
+        room it lights the keys brighter than you want, and in ordinary room
+        light it suppresses them entirely even when you would rather have a
+        faint glow.
+      </p>
+      <p>
+        Dim Keys reads the ambient light sensor once a second and drives the
+        backlight itself, from two settings you choose.
+      </p>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>A ceiling it never exceeds</h3>
+        <p>Four presets, or any level in between on the slider.</p>
+        <dl class="rows">
+          <div class="row"><dt>Off</dt><dd>Keys stay dark at every light level</dd></div>
+          <div class="row"><dt>Min</dt><dd>The dimmest the hardware can light</dd></div>
+          <div class="row"><dt>Med</dt><dd>35%</dd></div>
+          <div class="row"><dt>Max</dt><dd>No cap</dd></div>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h3>Sensitivity you set yourself</h3>
+        <p>How dark it must be before the keys come on at all.</p>
+        <dl class="rows">
+          <div class="row"><dt>Low</dt><dd>Below 7 lux — an unlit room</dd></div>
+          <div class="row"><dt>Med</dt><dd>Below 48 lux — a dimly lit room</dd></div>
+          <div class="row"><dt>High</dt><dd>Below 120 lux — normal room light</dd></div>
+        </dl>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:22px">
+      <strong>High is more eager than macOS itself.</strong> It lights the keys
+      in ordinary room light, where stock macOS gives you nothing.
+    </p>
+  </section>
+
+  <section>
+    <h2>Small, quiet, and honest about it</h2>
+    <div class="facts">
+      <div>
+        <h3>Stays out of the way</h3>
+        <p>One menu bar icon, no Dock icon, no window. Idle CPU measures 0.0% — it
+           sleeps until the light actually changes. You can hide the icon too.</p>
+      </div>
+      <div>
+        <h3>Nothing leaves your Mac</h3>
+        <p>The only network request it ever makes is asking GitHub for the latest
+           version number. No accounts, no analytics, no telemetry.</p>
+      </div>
+      <div>
+        <h3>Signed and notarized by Apple</h3>
+        <p>It opens with a double-click — no Gatekeeper detour, no right-click
+           trick. Universal, so it runs native on Apple Silicon and Intel.</p>
+      </div>
+      <div>
+        <h3>Open source, MIT</h3>
+        <p>About 1.5 MB, one binary, no frameworks bundled. Read it, build it
+           yourself, or take it apart.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install</h2>
+    <ol class="steps">
+      <li>Download the <code>.dmg</code> and open it.</li>
+      <li>Drag <strong>Dim Keys</strong> into <strong>Applications</strong>.</li>
+      <li>Open it. It appears in the menu bar — click the icon for the panel.</li>
+    </ol>
+    <p class="note">
+      <strong>Keep it in Applications if you use Launch at login.</strong>
+      macOS registers the login item at whatever path the app is sitting in, so
+      leaving it in your Downloads folder means the login item breaks the moment
+      you tidy up.
+    </p>
+  </section>
+
+  <section>
+    <h2>Requirements</h2>
+    <div class="prose">
+      <p>
+        A MacBook with a backlit keyboard and an ambient light sensor. Apple
+        Silicon or Intel.
+      </p>
+      <p>
+        <strong>macOS 13 or later</strong> — though everything has only been
+        developed and verified on macOS 26, so anything earlier is genuinely
+        untested rather than merely unsupported. There is no public API for
+        keyboard backlight control on macOS at all, so the app uses a private
+        one. If that differs on your version it does not misbehave; it simply
+        reports that no keyboard backlight was found. If that happens,
+        <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/issues">open an issue</a>
+        and say which macOS version you are on.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <nav>
+    <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter">GitHub</a>
+    <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases">Releases</a>
+    <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/issues">Report an issue</a>
+    <a href="https://buymeacoffee.com/martun">Buy me a cookie</a>
+  </nav>
+  <p>MIT licensed. Made by <a href="https://github.com/dmartoon">Martun Davoyan</a>.</p>
+</footer>
+
+<script>
+// The download button works with JavaScript off — it points at the latest
+// release page. With JS it is upgraded to the .dmg itself, so the download is
+// genuinely one click. The version is never hardcoded here: a hand-edited
+// number on a landing page is one more thing to forget on release day, and a
+// stale one is worse than none at all.
+(function () {
+  var REPO = 'dmartoon/MacBook-Keyboard-Backlight-Limiter';
+  var btn  = document.getElementById('download');
+  var meta = document.getElementById('meta');
+
+  fetch('https://api.github.com/repos/' + REPO + '/releases/latest',
+        { headers: { Accept: 'application/vnd.github+json' } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (rel) {
+      var dmg = (rel.assets || []).filter(function (a) {
+        return /\.dmg$/i.test(a.name);
+      })[0];
+      if (dmg) { btn.href = dmg.browser_download_url; }
+
+      var bits = ['Free'];
+      var version = String(rel.tag_name || '').replace(/^v/, '');
+      if (version) { bits.push('Version ' + version); }
+      if (dmg && dmg.size) { bits.push((dmg.size / 1048576).toFixed(1) + ' MB'); }
+      bits.push('macOS 13 or later');
+      if (bits.length) {
+        meta.innerHTML = bits.map(function (b) {
+          return '<span>' + b + '</span>';
+        }).join('<span class="sep">·</span>');
+      }
+    })
+    .catch(function () { /* keep the static fallback */ });
+})();
+</script>
+
+</body>
+</html>
