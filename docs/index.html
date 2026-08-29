@@ -71,13 +71,34 @@ a:hover { text-decoration: underline; }
 
 .hero > * { position: relative; }
 
+/* The halo is a background behind the icon, NOT filter: drop-shadow() on the
+   <img>. drop-shadow follows the image's alpha, and that alpha does not exist
+   until the bitmap has arrived and decoded — on a cold load the filter is
+   painted against the element's box instead, leaving a square halo around the
+   icon. A cached load already has the bitmap at first paint, which is exactly
+   why it only ever showed on a hard refresh. A background gradient depends on
+   nothing and cannot do this.
+
+   Before that it was drop-shadow(0 14px 34px rgba(0,0,0,.55)): a heavy black
+   shadow behind a dark squircle, invisible on #000 but a smudged box the moment
+   the page lifted. Warm suits a backlight app better anyway. */
+.iconglow {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.iconglow::before {
+  content: "";
+  position: absolute;
+  inset: -30px;
+  background: radial-gradient(closest-side, rgba(246,217,159,.26), rgba(246,217,159,0));
+  pointer-events: none;
+}
+
 .appicon {
+  position: relative;          /* so the icon paints above the halo */
   width: 112px; height: 112px;
   image-rendering: -webkit-optimize-contrast;
-  /* Was drop-shadow(0 14px 34px rgba(0,0,0,.55)). A heavy black shadow behind a
-     dark squircle is invisible on #000 but reads as a smudged box the moment
-     the page lifts. A warm halo suits a backlight app better anyway. */
-  filter: drop-shadow(0 0 28px rgba(246,217,159,.22));
 }
 
 h1 {
@@ -299,7 +320,7 @@ footer nav a {
 
 <header class="hero">
   <div class="wrap">
-    <img class="appicon" src="icon.png" width="112" height="112" alt="">
+    <span class="iconglow"><img class="appicon" src="icon.png" width="112" height="112" alt=""></span>
     <h1>Dim Keys</h1>
     <p class="tagline">Keyboard backlight limiter for MacBook</p>
     <p class="lede">
