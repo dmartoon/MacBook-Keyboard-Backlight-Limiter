@@ -1,26 +1,35 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="">
+  <img src="docs/icon.png" width="112" alt="">
 </p>
 
 <h1 align="center">Dim Keys</h1>
 
 <p align="center">
-  <b>Keyboard backlight limiter for MacBook.</b>
+  Keyboard backlight limiter for MacBook
+</p>
+
+<p align="center">
+  Set a brightness limit for your keyboard and adjust ambient light<br>
+  sensitivity to control when the backlight turns on.
+</p>
+
+<p align="center">
+  <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest"><img src="docs/download-button.png" width="252" alt="Download for macOS"></a>
+</p>
+
+<p align="center">
+  <sub>Free · Universal · &lt; 2 MB · macOS 13 or later</sub>
 </p>
 
 <p align="center">
   <img src="docs/screenshot.png" width="320" alt="The Dim Keys panel">
 </p>
 
-<p align="center">
-  <a href="https://dimkeys.com"><b>dimkeys.com</b></a> · <a href="https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest">Download</a> · <a href="LICENSE">MIT</a>
-</p>
-
 A macOS menu-bar app that caps how bright the keyboard backlight can get and
 drives it from the ambient light sensor, with a sensitivity you choose.
 
 **If you just want to use it, [dimkeys.com](https://dimkeys.com) is the better
-page** — it has the download, what the settings do, and what to expect. This one
+page.** It has the download, what the settings do, and what to expect. This one
 is about how the app works and why it is built the way it is.
 
 ## The constraint everything else follows from
@@ -34,16 +43,17 @@ reaches the hardware from an unprivileged process:
                          keyboardID:id]
 ```
 
-**Writing that property permanently disengages macOS's own keyboard
-auto-brightness.** macOS treats the write as a manual override — the same as
-dragging the System Settings slider — and it does not resume. Not on a timeout,
-not when the ambient level changes, not when the app quits. Only pressing F5/F6
-hands control back.
+**Writing that property disengages macOS's own keyboard auto-brightness.**
+macOS treats the write as a manual override and stops driving the keys itself.
+It does not come back on a timeout, and it does not come back when the ambient
+level changes. Pressing F5/F6 hands control back, and so does quitting the app.
+See *Known limitations*.
 
 That one fact rules out the design everyone reaches for first. A limiter that
 sits back and clamps the backlight only when it exceeds your ceiling would work
-exactly once: the first clamp kills the ambient response, and nothing ever
-raises the keys again. It cannot be a limiter in the passive sense.
+exactly once: the first clamp kills the ambient response, and for as long as the
+app keeps running, nothing raises the keys again. It cannot be a limiter in the
+passive sense.
 
 So the app owns the whole curve. Read the lux, compute the brightness, write it,
 every time — the ceiling is an input to that calculation rather than a lid
@@ -65,7 +75,7 @@ darkness = 1 − lux / offLux
 | Med | 48 lux | 60 lux |
 | High | 120 lux | 150 lux |
 
-Four things in there are load-bearing:
+Four things in there are important:
 
 - **The gap between `onLux` and `offLux` is hysteresis.** Ambient readings jitter
   by several lux, and with a single threshold the keys blink on and off at the
@@ -123,18 +133,19 @@ wall** — that is the workaround worth not spending a weekend on.
 About 1,900 lines of Swift, no dependencies, no bundled frameworks.
 
 ```
-main.swift               NSApplication bootstrap, .accessory policy
-AppDelegate.swift        Menu bar item and the NSPopover panel — one page, no settings screen
-KeyboardBacklight.swift  CoreBrightness bridge: read, write, change notifications
-AmbientLightSensor.swift IO registry walk for a node publishing CurrentLux
-Limiter.swift            Owns the lux→brightness curve and writes the result
-Settings.swift           Presets, sensitivity thresholds, UserDefaults
-LaunchAtLogin.swift      SMAppService wrapper
-UpdateCheck.swift        GitHub releases check — notifies, never installs
-UpdateNotifier.swift     The notification for it
-OldVersionCleanup.swift  Offers once to retire a pre-rename copy
-MenuBarIcon.swift        The status item glyph, drawn in code
-tools/make-icon.swift    Regenerates AppIcon.icns — the app icon is code, not a blob
+main.swift                        NSApplication bootstrap, .accessory policy
+AppDelegate.swift                 Menu bar item and the NSPopover panel — one page, no settings screen
+KeyboardBacklight.swift           CoreBrightness bridge: read, write, change notifications
+AmbientLightSensor.swift          IO registry walk for a node publishing CurrentLux
+Limiter.swift                     Owns the lux→brightness curve and writes the result
+Settings.swift                    Presets, sensitivity thresholds, UserDefaults
+LaunchAtLogin.swift               SMAppService wrapper
+UpdateCheck.swift                 GitHub releases check — notifies, never installs
+UpdateNotifier.swift              The notification for it
+OldVersionCleanup.swift           Offers once to retire a pre-rename copy
+MenuBarIcon.swift                 The status item glyph, drawn in code
+tools/make-icon.swift             Regenerates AppIcon.icns — the app icon is code, not a blob
+tools/make-download-button.swift  Draws docs/download-button.png from the landing page's CSS
 ```
 
 It is **event-driven**: `registerNotificationForKeys:keyboardID:block:` fires on
@@ -168,7 +179,7 @@ KBL_SELFTEST=1 .build/release/KeyboardBacklightLimiter
 
 The self-test shows the popover against a real window and asserts that no
 subview escapes the bounds and that the bottom row does not collide. It covers
-both panel layouts — with and without an ambient sensor — the rebuild between
+both panel layouts, with and without an ambient sensor, the rebuild between
 them, and the update-available state. The bottom row is positioned from measured
 text, so rewording a button title is precisely the change that would silently
 push the version label underneath it.
@@ -203,12 +214,14 @@ just silently stops anyone from being offered the update.
 - **Not distributable on the Mac App Store.** The app's entire function is a
   private framework and there is nothing public to port to, so this is an
   automatic rejection rather than a risk to manage.
-- **macOS does not resume driving the backlight after the app quits.** `stop()`
-  restores the brightness captured before the first write, falling back to a
-  mid-scale value when that was itself dark, so quitting never strands you with
-  a keyboard that reads as broken. The fallback is not gated on ambient level,
-  so quitting in a bright room with the keys dark lights them where macOS would
-  have left them off.
+- **macOS takes the backlight back when the app quits.** Verified with a
+  flashlight: once the app is gone the keys track the light again and go off
+  under a direct beam. The override appears to be tied to the client
+  connection rather than to the value written, which would explain why nothing
+  the app can write releases it but exiting does. That part is inference rather
+  than measurement. `stop()` still restores the brightness captured before the
+  first write, falling back to a mid-scale value when that was itself dark, but
+  this is now only about the moment between exit and macOS picking it up.
 - **The app overrides anything else writing the same property**, pulling an
   external write back to its own target within about half a second. That is the
   design working, but it puts System Settings › Keyboard › *"Turn keyboard
@@ -222,8 +235,9 @@ just silently stops anyone from being offered the update.
 ## Contributing
 
 Issues and pull requests are welcome. Bug reports are much more useful with the
-macOS version and the Mac model in them — a good deal of this app's behaviour is
-hardware-specific, and the numbers above were all measured on one machine.
+macOS version and the Mac model in them. A good deal of this app's behaviour is
+hardware-specific. The numbers above were measured on an M5 Pro MacBook Pro,
+and the app is confirmed working on an M4 MacBook Air.
 
 Security issues: see [SECURITY.md](SECURITY.md).
 

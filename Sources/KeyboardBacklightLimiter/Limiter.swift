@@ -97,16 +97,23 @@ final class Limiter {
         timer?.cancel(); timer = nil
         backlight.stopObserving()
 
-        // Hand back the level we found, not one we invented. Once we exit,
-        // nothing drives the backlight at all — macOS does not resume, so
-        // whatever we leave is what the user lives with until they press
-        // F5/F6.
+        // Hand back the level we found, not one we invented.
         //
-        // The floor stays, and it is not paranoia: keys that were dark at
-        // launch were dark *under macOS's management*, which would have re-lit
-        // them when the room darkened. We cannot give that back — only a
-        // frozen 0, which reads as a broken keyboard. So a dark starting point
-        // restores to `restoreOnQuit`; every lit one restores exactly.
+        // macOS DOES take the backlight back once we exit. Verified with a
+        // flashlight after a quit: the keys track the light again and go off
+        // under a direct beam. This file used to claim the opposite, on the
+        // strength of a 12s observation at a steady 5 lux, which is blind to
+        // ambient control that only acts on a change.
+        //
+        // The override therefore looks tied to our client connection rather
+        // than to the value written, which would explain why nothing we can
+        // write releases it but dying does. That is inference; the resume
+        // itself is measured.
+        //
+        // So this restore is courtesy, not rescue: it leaves a sane level for
+        // the moment between our exit and macOS picking the keys up. A dark
+        // starting point restores to `restoreOnQuit` rather than a frozen 0;
+        // every lit one restores exactly.
         let target = initialBrightness < Self.offEpsilon ? Self.restoreOnQuit : initialBrightness
         backlight.setBrightness(target)
 
