@@ -101,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         checkForUpdate()
         startUpdateTimer()
 
+        // Deferred one turn on purpose: running a modal from inside
+        // didFinishLaunching puts the alert up before the status item is on
+        // screen, so an accessory app appears to be a dialog with no app
+        // behind it. OldVersionCleanup.run() is a no-op unless a pre-rename
+        // copy is actually installed.
+        DispatchQueue.main.async { OldVersionCleanup.run() }
+
         if ProcessInfo.processInfo.environment["KBL_SELFTEST"] != nil { runSelfTest() }
     }
 
@@ -332,15 +339,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             print("  layout swap check skipped (no ambient sensor on this Mac)")
         }
 
-        // The notifier must be completely inert in a process with no bundle —
-        // this one. It is reached on every real update, so a crash here would
-        // take the app down for everybody at exactly the worst moment.
+        // The notifier must be completely inert in a process with no bundle.
+        // It is reached on every real update, so a crash there would take the
+        // app down for everybody at exactly the worst moment.
+        //
+        // Three things this check got wrong, all of which hid each other:
+        //
+        //  - "No bundle" is only true of the bare .build/release binary. The
+        //    documented screenshot capture runs this same suite from *inside*
+        //    the .app, where there is a bundle and the notifier is supposed to
+        //    work — so there the assertion demanded the opposite of the
+        //    requirement.
+        //  - `notifyIfNew` writes from an async authorization callback, so the
+        //    unconditional check raced it and usually ran first. It passed by
+        //    losing the race, which is a green result proving nothing.
+        //  - In a bundle this is the *real* preference domain, so the suite
+        //    was stranding a bogus 99.0.0 in it — silencing the notification
+        //    for a genuine 99.0.0 release. Found by that value sitting in live
+        //    preferences with nothing else able to explain it.
+        let notifiedKey = "lastNotifiedVersion"
+        let savedNotified = UserDefaults.standard.string(forKey: notifiedKey)
         UpdateNotifier.shared.start()
         UpdateNotifier.shared.notifyIfNew(version: "99.0.0")
-        if UserDefaults.standard.string(forKey: "lastNotifiedVersion") == "99.0.0" {
-            fail("notifier wrote state from a process with no bundle")
+        // Give the async write its chance to land in both cases, or the
+        // no-bundle branch passes for the same wrong reason as before.
+        pump(0.5)
+        if Bundle.main.bundleIdentifier == nil {
+            if UserDefaults.standard.string(forKey: notifiedKey) == "99.0.0" {
+                fail("notifier wrote state from a process with no bundle")
+            } else {
+                print("  update notifier: inert without a bundle, as required")
+            }
         } else {
-            print("  update notifier: inert without a bundle, as required")
+            print("  update notifier: live in a bundle, as required")
+        }
+        // Restore unconditionally — see above for what leaving it behind costs.
+        if let savedNotified {
+            UserDefaults.standard.set(savedNotified, forKey: notifiedKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: notifiedKey)
         }
 
         // Dismissal. Only the monitor lifecycle is assertable here: a process
