@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Keyboard Backlight Limiter</string>
+	<string>Dim Keys</string>
 	<key>CFBundleExecutable</key>
 	<string>KeyboardBacklightLimiter</string>
 	<key>CFBundleIconFile</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Keyboard Backlight Limiter</string>
+	<string>Dim Keys</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a distributable, notarized DMG of Keyboard Backlight Limiter.
+# Builds a distributable, notarized DMG of Dim Keys.
 #
 #   ./release.sh                 full pipeline: build, sign, notarize, staple
 #   ./release.sh --no-notarize   everything except the Apple round trips
@@ -25,7 +25,7 @@ set -euo pipefail
 main() {
 cd "$(dirname "$0")"
 
-APPNAME="Keyboard Backlight Limiter"
+APPNAME="Dim Keys"
 EXEC="KeyboardBacklightLimiter"
 DIST="dist"
 APP="${DIST}/${APPNAME}.app"
@@ -34,7 +34,7 @@ NOTARIZE=1
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
 BUILDNUM=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Resources/Info.plist)
-DMG="${DIST}/KeyboardBacklightLimiter-${VERSION}.dmg"
+DMG="${DIST}/DimKeys-${VERSION}.dmg"
 
 # ── signing identity ────────────────────────────────────────────────────────
 # KBL_IDENTITY="-" forces ad-hoc, which exercises the whole pipeline without a

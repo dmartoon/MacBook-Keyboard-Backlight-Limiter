@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // bar and the app icon read as one product. See MenuBarIcon for why
             // it is drawn rather than scaled from the icon.
             button.image = MenuBarIcon.image()
-            button.image?.accessibilityDescription = "Keyboard Backlight Limiter"
+            button.image?.accessibilityDescription = "Dim Keys"
             button.target = self
             button.action = #selector(togglePopover)
         }
@@ -437,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         var y = h - 30
 
-        let title = label("Keyboard Backlight Limiter", 13, .semibold)
+        let title = label("Dim Keys", 13, .semibold)
         title.frame = NSRect(x: 16, y: y, width: W - 32, height: 18)
         v.addSubview(title)
         y -= 30

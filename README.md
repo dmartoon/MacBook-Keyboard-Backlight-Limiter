@@ -1,16 +1,17 @@
 <p align="center">
-  <img src="docs/icon.png" width="128" alt="Keyboard Backlight Limiter icon">
+  <img src="docs/icon.png" width="128" alt="Dim Keys icon">
 </p>
 
-<h1 align="center">Keyboard Backlight Limiter</h1>
+<h1 align="center">Dim Keys</h1>
 
 <p align="center">
-  A menu-bar app that caps how bright your MacBook keyboard backlight can get,
+  <b>Keyboard backlight limiter for MacBook.</b><br>
+  A menu-bar app that caps how bright your keyboard backlight can get,
   and decides when it comes on from the ambient light sensor.
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.png" width="320" alt="The app's popover">
+  <img src="docs/screenshot.png" width="320" alt="The Dim Keys panel">
 </p>
 
 ## Why
@@ -27,7 +28,7 @@ to get before the keys light up at all.
 ## Install
 
 1. Download the `.dmg` from [Releases](https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter/releases/latest)
-2. Drag the app into **Applications**
+2. Drag **Dim Keys** into **Applications**
 3. Open it — it appears in the menu bar, not the Dock
 
 Moving it to `/Applications` matters if you use **Launch at login**: macOS
@@ -113,7 +114,7 @@ for any reason it stays silent.
 git clone https://github.com/dmartoon/MacBook-Keyboard-Backlight-Limiter.git
 cd MacBook-Keyboard-Backlight-Limiter
 ./build-app.sh
-open "build/Keyboard Backlight Limiter.app"
+open "build/Dim Keys.app"
 ```
 
 `release.sh` produces the distributable build instead — universal, Developer ID

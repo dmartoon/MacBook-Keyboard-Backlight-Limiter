@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds Keyboard Backlight Limiter.app in ./build/
+# Builds Dim Keys.app in ./build/
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APPNAME="Keyboard Backlight Limiter"
+APPNAME="Dim Keys"
 EXEC="KeyboardBacklightLimiter"
 OUT="build/${APPNAME}.app"
 

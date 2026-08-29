@@ -45,7 +45,7 @@ enum UpdateCheck {
 
         var request = URLRequest(url: latestAPI, timeoutInterval: 10)
         // GitHub rejects API requests that arrive without a User-Agent.
-        request.setValue("KeyboardBacklightLimiter/\(currentVersion)",
+        request.setValue("DimKeys/\(currentVersion)",
                          forHTTPHeaderField: "User-Agent")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
 

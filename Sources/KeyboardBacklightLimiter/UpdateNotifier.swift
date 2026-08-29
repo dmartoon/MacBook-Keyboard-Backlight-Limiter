@@ -58,7 +58,7 @@ final class UpdateNotifier: NSObject, UNUserNotificationCenterDelegate {
             defaults.set(version, forKey: Self.notifiedKey)
 
             let content = UNMutableNotificationContent()
-            content.title = "Keyboard Backlight Limiter \(version)"
+            content.title = "Dim Keys \(version)"
             content.body = "A new version is available. Click to open the releases page."
             // No sound: this is never urgent, and the app's whole character is
             // being quiet when nothing is wrong.
