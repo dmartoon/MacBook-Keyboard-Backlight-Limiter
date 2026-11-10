@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var sensitivityHint: NSTextField!
     private var luxField: NSTextField!
 
-    private var versionField: NSTextField!
+    private var versionField: VersionLabel!
     /// The panel's layout depends on whether the ambient sensor exists, and
     /// that answer can change after launch — see `Limiter.sensor`. These track
     /// what the *current* panel was built for and what still owes a rebuild.
@@ -135,6 +135,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let end = Date().addingTimeInterval(secs)
             while Date() < end {
                 RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+            }
+        }
+        /// `pump` runs the run loop but never hands an event to a window. This
+        /// suite runs inside applicationDidFinishLaunching, before NSApp's own
+        /// event loop has started, so anything that needs an event delivered,
+        /// a click or the app losing focus, has to wait with this instead.
+        func dispatch(_ secs: Double) {
+            let end = Date().addingTimeInterval(secs)
+            while Date() < end {
+                if let e = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.02),
+                                           inMode: .default, dequeue: true) { NSApp.sendEvent(e) }
             }
         }
 
@@ -260,6 +271,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // Truncation is measured off the cell, not off the string: NSTextField
         // adds internal insets, so measuring the string alone reports ~4pt more
         // room than actually exists and calls a truncating label "fits".
+        //
+        // The link also has to answer a click, which no layout check sees. It
+        // was dead from 1.2.0 to 1.2.2 with this suite green (see VersionLabel),
+        // so it is clicked for real: posted to the app's event queue as a real
+        // click arrives, and dispatched. The browser is swapped out.
+        func click(_ view: NSView) {
+            guard let win = view.window else { return }
+            let p = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+            let now = ProcessInfo.processInfo.systemUptime
+            for (type, dt, pressure) in [(NSEvent.EventType.leftMouseDown, 0.0, Float(1)),
+                                         (.leftMouseUp, 0.08, Float(0))] {
+                guard let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [],
+                                                 timestamp: now + dt, windowNumber: win.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: 1,
+                                                 pressure: pressure) else { continue }
+                NSApp.postEvent(e, atStart: false)
+            }
+            dispatch(0.5)
+        }
+        // Up to three tries, reopening the panel if it has closed. A click
+        // anywhere else on screen closes it (the global monitor), so someone
+        // using the Mac while the suite runs can make a try miss, and did. A
+        // dead link misses every try.
+        func linkOpens() -> Bool {
+            var opened: URL?
+            let realOpen = openURL
+            openURL = { opened = $0 }
+            defer { openURL = realOpen }
+            for _ in 0..<3 where opened == nil {
+                if !popover.isShown {
+                    popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+                    pump(0.5)
+                }
+                click(versionField)
+            }
+            return opened == UpdateCheck.releasesPage
+        }
+        // The panel has been used before the update turns up, as it always has
+        // in real life. That is the condition the old click handling failed in.
+        click(versionField)
         showUpdateAvailable("1.10.0")
         mainView.layoutSubtreeIfNeeded()
         pump(0.2)
@@ -292,6 +343,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             while (popover.isShown || globalClickMonitor != nil) && Date() < deadline { pump(0.1) }
             pump(0.2)
         }
+        // Clicking the link closes the panel, so this goes last on it.
+        if linkOpens() {
+            print("  update link: a click opens the releases page")
+        } else {
+            fail("clicking the update link did nothing")
+        }
+        waitClosed()
         // Skipped rather than failed on a Mac that genuinely has no sensor:
         // there is no tall layout to compare against there, and a suite that
         // fails for environmental reasons is a suite people learn to ignore.
@@ -335,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             } else {
                 print("  update notice survived the rebuild: \u{22}\(versionField.stringValue)\u{22}")
             }
+            if !linkOpens() { fail("the rebuilt update link does not answer a click") }
             waitClosed()
         } else {
             print("  layout swap check skipped (no ambient sensor on this Mac)")
@@ -390,12 +449,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             UserDefaults.standard.removeObject(forKey: notifiedKey)
         }
 
-        // Dismissal. Only the monitor lifecycle is assertable here: a process
-        // launched from a terminal cannot become frontmost, so NSApp.isActive
-        // stays false and the app can never *resign* active either. Asserting
-        // the focus-loss behaviour unconditionally would fail for purely
-        // environmental reasons, which is worse than not testing it — a suite
-        // that cries wolf gets ignored.
+        // Dismissal. A process launched from a terminal does not become active
+        // on its own, so NSApp.isActive starts out false and the app could
+        // never *resign* active either. The update link check's clicks do
+        // activate it, so the focus-loss check below now runs from a terminal
+        // too. It still skips itself when the app is not active: asserting it
+        // unconditionally would fail for purely environmental reasons, which
+        // is worse than not testing it — a suite that cries wolf gets ignored.
+        //
+        // Its wait has to dispatch events. The app learns it lost focus from
+        // an event, and with `pump` that event was never delivered, so the
+        // check could not pass. Until the link check, it had never run.
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         let showDeadline = Date().addingTimeInterval(3)
         while globalClickMonitor == nil && Date() < showDeadline { pump(0.1) }
@@ -410,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 $0.bundleIdentifier == "com.apple.finder"
             }) {
                 other.activate()
-                pump(1.0)
+                dispatch(1.0)
                 if popover.isShown { fail("popover stayed open after another app took focus") }
                 else { print("  dismissal: closed when another app took focus") }
             }
@@ -597,7 +661,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         support.frame = NSRect(x: quit.frame.minX - 6 - sw, y: 12, width: sw, height: 22)
         v.addSubview(support)
 
-        let version = label("Version \(Self.displayVersion)", 10, .regular)
+        let version = VersionLabel(labelWithString: "Version \(Self.displayVersion)")
+        version.font = .systemFont(ofSize: 10, weight: .regular)
         version.textColor = .tertiaryLabelColor
         version.lineBreakMode = .byTruncatingTail
         version.frame = NSRect(x: 16, y: 18,
@@ -871,17 +936,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         versionField.stringValue = "Update to \(latest)"
         versionField.textColor = .linkColor
         versionField.toolTip = "A newer version is available on GitHub"
-        // Guarded: this can now run on every panel open, and a recogniser per
-        // call would stack up duplicates on the same label.
-        if versionField.gestureRecognizers.isEmpty {
-            versionField.addGestureRecognizer(
-                NSClickGestureRecognizer(target: self, action: #selector(openReleases)))
-        }
+        // An assignment, so running on every panel open cannot stack anything.
+        versionField.onClick = { [weak self] in self?.openReleases() }
     }
+
+    /// How the releases page is opened. The self-test swaps this out, so it can
+    /// click the link for real without launching a browser.
+    private var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
     @objc private func openReleases() {
         popover.performClose(nil)
-        NSWorkspace.shared.open(UpdateCheck.releasesPage)
+        openURL(UpdateCheck.releasesPage)
     }
 
     private static let supportURL = "https://buymeacoffee.com/martun"
@@ -897,4 +962,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+}
+
+/// The version label, which becomes the update link when a newer release is
+/// out. It takes the click itself, in `mouseDown`/`mouseUp`, rather than
+/// through an `NSClickGestureRecognizer`, and that is the fix for a link that
+/// did nothing.
+///
+/// Once a label has been in a window, AppKit gives it a private
+/// `NSControlGestureRecognizer` (seen on macOS 27.2). The old code only added
+/// its click recogniser to a label that had none, so an update found after the
+/// panel had first been opened got no click handling at all. Even added anyway,
+/// a recogniser that sits behind AppKit's fired on 0 or 1 click out of 3. A
+/// subclass that overrides `mouseDown` gets no recogniser from AppKit, and
+/// does not depend on how AppKit orders its own.
+final class VersionLabel: NSTextField {
+    /// Set while the label is a link. Nil leaves it an ordinary label.
+    var onClick: (() -> Void)?
+
+    /// Swallowed while it is a link. NSControl's own `mouseDown` runs a
+    /// tracking loop that would consume the mouse-up.
+    override func mouseDown(with event: NSEvent) {
+        guard onClick == nil else { return }
+        super.mouseDown(with: event)
+    }
+
+    /// Fires on release, and only inside the label, so dragging off cancels,
+    /// as with any link.
+    override func mouseUp(with event: NSEvent) {
+        guard let onClick else { return super.mouseUp(with: event) }
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick() }
+    }
 }
