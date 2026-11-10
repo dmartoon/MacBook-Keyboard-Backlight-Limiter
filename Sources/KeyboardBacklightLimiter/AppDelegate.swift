@@ -16,7 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var sensitivityHint: NSTextField!
     private var luxField: NSTextField!
 
-    private var versionField: VersionLabel!
+    private var versionField: NSTextField!
+    /// The update notice: a button in the version label's slot, hidden until
+    /// there is an update. See `showUpdateAvailable`.
+    private var updateLink: NSButton!
     /// The panel's layout depends on whether the ambient sensor exists, and
     /// that answer can change after launch — see `Limiter.sensor`. These track
     /// what the *current* panel was built for and what still owes a rebuild.
@@ -273,7 +276,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // room than actually exists and calls a truncating label "fits".
         //
         // The link also has to answer a click, which no layout check sees. It
-        // was dead from 1.2.0 to 1.2.2 with this suite green (see VersionLabel),
+        // was dead from 1.2.0 to 1.2.2 with this suite green (CLAUDE.md, fixed
+        // bug 12),
         // so it is clicked for real: posted to the app's event queue as a real
         // click arrives, and dispatched. The browser is swapped out.
         func click(_ view: NSView) {
@@ -304,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
                     pump(0.5)
                 }
-                click(versionField)
+                click(updateLink)
             }
             return opened == UpdateCheck.releasesPage
         }
@@ -314,12 +318,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         showUpdateAvailable("1.10.0")
         mainView.layoutSubtreeIfNeeded()
         pump(0.2)
-        if let cell = versionField.cell {
-            let needed = cell.cellSize.width, have = versionField.frame.width
+        if updateLink.isHidden || !versionField.isHidden {
+            fail("the update notice did not take the version label's place")
+        }
+        if let cell = updateLink.cell {
+            let needed = cell.cellSize.width, have = updateLink.frame.width
             if needed > have {
                 fail(String(format: "update notice truncates at a realistic version: needs %.1fpt, has %.1fpt", needed, have))
             } else {
-                print(String(format: "  update notice \u{22}%@\u{22} needs %.1fpt of %.1fpt", versionField.stringValue as NSString, needed, have))
+                print(String(format: "  update notice \u{22}%@\u{22} needs %.1fpt of %.1fpt", updateLink.title as NSString, needed, have))
             }
         }
         checkBottomRow("update available")
@@ -388,10 +395,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             checkBounds("rebuilt with sensor")
             checkBottomRow("rebuilt with sensor")
             // The notice lives in the version label, which the rebuild threw away.
-            if versionField.stringValue.hasPrefix("Version") {
+            if updateLink.isHidden {
                 fail("update notice lost in the rebuild")
             } else {
-                print("  update notice survived the rebuild: \u{22}\(versionField.stringValue)\u{22}")
+                print("  update notice survived the rebuild: \u{22}\(updateLink.title)\u{22}")
             }
             if !linkOpens() { fail("the rebuilt update link does not answer a click") }
             waitClosed()
@@ -661,14 +668,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         support.frame = NSRect(x: quit.frame.minX - 6 - sw, y: 12, width: sw, height: 22)
         v.addSubview(support)
 
-        let version = VersionLabel(labelWithString: "Version \(Self.displayVersion)")
-        version.font = .systemFont(ofSize: 10, weight: .regular)
+        let version = label("Version \(Self.displayVersion)", 10, .regular)
         version.textColor = .tertiaryLabelColor
         version.lineBreakMode = .byTruncatingTail
         version.frame = NSRect(x: 16, y: 18,
                                width: Swift.max(40, support.frame.minX - 6 - 16), height: 14)
         v.addSubview(version)
         versionField = version
+
+        // The update notice takes the label's slot as a borderless button, not
+        // a clickable label. In macOS 27 AppKit runs its controls on gesture
+        // recognisers, and a click recogniser added to the label lost to
+        // AppKit's own (CLAUDE.md, fixed bug 12). A button is the standard
+        // control for an action, and Apple's guidance for macOS 27 is that
+        // standard controls work with touch as they are.
+        let link = NSButton(title: "", target: self, action: #selector(openReleases))
+        link.isBordered = false
+        link.alignment = .left
+        link.lineBreakMode = .byTruncatingTail
+        link.toolTip = "A newer version is available on GitHub"
+        // 1pt in from the label's frame: a borderless button pads its title
+        // 1pt less than a label does, so this puts the text exactly where the
+        // version's was, in line with the labels above. Measured at 1x.
+        link.frame = NSRect(x: version.frame.minX + 1, y: version.frame.minY,
+                            width: version.frame.width - 1, height: version.frame.height)
+        link.isHidden = true
+        v.addSubview(link)
+        updateLink = link
 
         mainView = v
         syncPresetSelection()
@@ -933,11 +959,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func showUpdateAvailable(_ latest: String) {
         latestUpdateVersion = latest
-        versionField.stringValue = "Update to \(latest)"
-        versionField.textColor = .linkColor
-        versionField.toolTip = "A newer version is available on GitHub"
-        // An assignment, so running on every panel open cannot stack anything.
-        versionField.onClick = { [weak self] in self?.openReleases() }
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        updateLink.attributedTitle = NSAttributedString(
+            string: "Update to \(latest)",
+            attributes: [.font: versionField.font ?? .systemFont(ofSize: 10),
+                         .foregroundColor: NSColor.linkColor,
+                         .paragraphStyle: style])
+        updateLink.isHidden = false
+        versionField.isHidden = true
     }
 
     /// How the releases page is opened. The self-test swaps this out, so it can
@@ -962,35 +992,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
-}
-
-/// The version label, which becomes the update link when a newer release is
-/// out. It takes the click itself, in `mouseDown`/`mouseUp`, rather than
-/// through an `NSClickGestureRecognizer`, and that is the fix for a link that
-/// did nothing.
-///
-/// Once a label has been in a window, AppKit gives it a private
-/// `NSControlGestureRecognizer` (seen on macOS 27.2). The old code only added
-/// its click recogniser to a label that had none, so an update found after the
-/// panel had first been opened got no click handling at all. Even added anyway,
-/// a recogniser that sits behind AppKit's fired on 0 or 1 click out of 3. A
-/// subclass that overrides `mouseDown` gets no recogniser from AppKit, and
-/// does not depend on how AppKit orders its own.
-final class VersionLabel: NSTextField {
-    /// Set while the label is a link. Nil leaves it an ordinary label.
-    var onClick: (() -> Void)?
-
-    /// Swallowed while it is a link. NSControl's own `mouseDown` runs a
-    /// tracking loop that would consume the mouse-up.
-    override func mouseDown(with event: NSEvent) {
-        guard onClick == nil else { return }
-        super.mouseDown(with: event)
-    }
-
-    /// Fires on release, and only inside the label, so dragging off cancels,
-    /// as with any link.
-    override func mouseUp(with event: NSEvent) {
-        guard let onClick else { return super.mouseUp(with: event) }
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick() }
-    }
 }
