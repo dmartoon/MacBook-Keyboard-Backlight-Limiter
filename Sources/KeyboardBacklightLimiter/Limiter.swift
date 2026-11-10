@@ -35,6 +35,30 @@ final class Limiter {
     /// so the ambient threshold can apply hysteresis.
     private var isLit = false
 
+    /// When we last tried to light keys that read dark, and have not yet seen
+    /// them lit. Nil whenever there is no such attempt outstanding.
+    ///
+    /// macOS can hold the keys dark over our head: with the lid shut, and
+    /// during the inactivity dim. It accepts the write, nothing lights, and the
+    /// reading stays 0. Before this, every 1 Hz sample therefore wrote again,
+    /// for as long as the hold lasted. That came to 30,394 writes over a docked
+    /// weekend, each one a preference write inside `corebrightnessd`.
+    ///
+    /// So an attempt to light dark keys is not repeated while they stay dark,
+    /// except as a retry every `heldRetry`. Only lighting is held back. A dark
+    /// keyboard is always under the ceiling, so this can never let the keys
+    /// past the cap. When the hold ends, macOS restores the keys to our last
+    /// write. That is measured in `corebrightnessd`'s log for both the lid and
+    /// the inactivity dim, and it is what clears this.
+    private var litAttempt: Date?
+    /// Fallback in case a hold ever ends without the keys coming back on.
+    private static let heldRetry: TimeInterval = 30
+    /// A reading this soon after our own write may only echo it. `setProperty`
+    /// returns before `corebrightnessd` has acted on it, and an immediate read
+    /// returns the value just written, so such a read cannot show that a write
+    /// was refused, or that one landed.
+    private static let echoWindow: TimeInterval = 0.5
+
     /// Brightness the keyboard was at when we took it over, so quitting can
     /// hand it back instead of inventing a level.
     ///
@@ -249,11 +273,23 @@ final class Limiter {
         let crossesOnOff = isOff(target) != isOff(current)
         let differs = abs(current - target) > Self.deadband || crossesOnOff
         let cooled = Date().timeIntervalSince(lastWrite) > 0.2
-        if differs && (cooled || force) {
+
+        // Keys still dark after we tried to light them are being held dark by
+        // macOS, so writing again changes nothing. See `litAttempt`.
+        let lighting = isOff(current) && !isOff(target)
+        lock.lock()
+        if litAttempt != nil, !isOff(current),
+           now.timeIntervalSince(lastWrite) > Self.echoWindow {
+            litAttempt = nil   // lit after all: it took, or the hold is over
+        }
+        let held = lighting && (litAttempt.map { now.timeIntervalSince($0) < Self.heldRetry } ?? false)
+        lock.unlock()
+
+        if differs && ((cooled && !held) || force) {
             lock.lock(); isWriting = true; lock.unlock()
             backlight.setBrightness(target)
             lastWrite = Date()
-            lock.lock(); isWriting = false; lock.unlock()
+            lock.lock(); isWriting = false; litAttempt = lighting ? lastWrite : nil; lock.unlock()
         }
 
         let shown = differs ? target : current
