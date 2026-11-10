@@ -89,8 +89,17 @@ EOS
 fi
 
 # ── universal build ─────────────────────────────────────────────────────────
-echo "==> swift build (arm64 + x86_64)"
-swift build -c release --arch arm64 --arch x86_64
+# The SDK version goes to the linker explicitly. Xcode 27.2's default build
+# engine (Swift Build) stamps LC_BUILD_VERSION with the deployment target as
+# the SDK, so the binary claims sdk 13.0 while being built against 27.2. macOS
+# keys appearance off that number: a 13.0 stamp draws the panel's controls in
+# the pre-macOS 26 style, and their wider buttons overflow the bottom row.
+# 1.2.0, built with Xcode 26, carried sdk 26.5. Checked again after assembly.
+MINOS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" Resources/Info.plist)
+SDKVER=$(xcrun --show-sdk-version)
+LINK_SDK=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MINOS" -Xlinker "$SDKVER")
+echo "==> swift build (arm64 + x86_64), minos ${MINOS}, sdk ${SDKVER}"
+swift build -c release --arch arm64 --arch x86_64 "${LINK_SDK[@]}"
 BIN_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
 
 echo "==> assembling ${APP}"
@@ -113,6 +122,15 @@ else
   echo "    build number: ${BUILDNUM} (from Info.plist — no git history found)" >&2
 fi
 echo "    architectures: $(lipo -archs "${APP}/Contents/MacOS/${EXEC}")"
+for ARCH in $(lipo -archs "${APP}/Contents/MacOS/${EXEC}"); do
+  STAMP=$(vtool -arch "$ARCH" -show-build "${APP}/Contents/MacOS/${EXEC}" \
+          | awk '$1=="minos"{m=$2} $1=="sdk"{s=$2} END{print m" "s}')
+  if [ "$STAMP" != "${MINOS} ${SDKVER}" ]; then
+    echo "error: the ${ARCH} slice is stamped minos/sdk ${STAMP}, expected ${MINOS} ${SDKVER}" >&2
+    exit 1
+  fi
+done
+echo "    build version: minos ${MINOS}, sdk ${SDKVER}, every slice"
 
 # ── sign ────────────────────────────────────────────────────────────────────
 # Hardened Runtime is required for notarization. Verified compatible with this
