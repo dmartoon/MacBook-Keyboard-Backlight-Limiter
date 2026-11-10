@@ -33,6 +33,11 @@ final class UpdateNotifier: NSObject, UNUserNotificationCenterDelegate {
         return UNUserNotificationCenter.current()
     }
 
+    /// Whether this process can post at all. For the self-test, which must
+    /// find this out without posting: in a bundle, `notifyIfNew` delivers a
+    /// real banner.
+    var isLive: Bool { center != nil }
+
     /// Must run during `applicationDidFinishLaunching`: a delegate set after
     /// the app finishes launching does not receive clicks on notifications.
     func start() {

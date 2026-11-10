@@ -357,21 +357,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         //    was stranding a bogus 99.0.0 in it — silencing the notification
         //    for a genuine 99.0.0 release. Found by that value sitting in live
         //    preferences with nothing else able to explain it.
+        //
+        // And a fourth, found after the other three were fixed: in a bundle
+        // the notifier is live, so calling it delivers a real "Dim Keys 99.0.0"
+        // banner to whoever ran the suite. It did, the day 1.2.1 shipped, from
+        // a check of the release build. So `notifyIfNew` is only exercised
+        // where it must do nothing. In a bundle the suite asks whether the
+        // notifier is live and never posts.
         let notifiedKey = "lastNotifiedVersion"
         let savedNotified = UserDefaults.standard.string(forKey: notifiedKey)
         UpdateNotifier.shared.start()
-        UpdateNotifier.shared.notifyIfNew(version: "99.0.0")
-        // Give the async write its chance to land in both cases, or the
-        // no-bundle branch passes for the same wrong reason as before.
-        pump(0.5)
         if Bundle.main.bundleIdentifier == nil {
+            UpdateNotifier.shared.notifyIfNew(version: "99.0.0")
+            // Give the async write its chance to land, or this passes for the
+            // same wrong reason as before.
+            pump(0.5)
             if UserDefaults.standard.string(forKey: notifiedKey) == "99.0.0" {
                 fail("notifier wrote state from a process with no bundle")
             } else {
                 print("  update notifier: inert without a bundle, as required")
             }
+        } else if UpdateNotifier.shared.isLive {
+            print("  update notifier: live in a bundle, as required (nothing posted)")
         } else {
-            print("  update notifier: live in a bundle, as required")
+            fail("update notifier is not live inside a bundle")
         }
         // Restore unconditionally — see above for what leaving it behind costs.
         if let savedNotified {
