@@ -55,12 +55,27 @@ final class Limiter {
     ///
     /// So a nil is treated as "not yet", not as "never".
     private var sensor: AmbientLightSensor?
-    /// How long after launch to keep re-probing on the sampling timer.
+    /// How long after launch to re-probe on every tick of the sampling timer.
     /// Measured: 1.7ms per walk when the sensor is there (the walk stops at it),
     /// 7.1ms on a Mac that genuinely has none. So at worst ~0.85s of work spread
-    /// across two minutes, once, and then nothing at idle. Past the deadline the
-    /// only remaining probes are on panel open, which covers the long tail free.
+    /// across two minutes, once.
     private let probeUntil = Date().addingTimeInterval(120)
+
+    /// After `probeUntil`, a missing sensor is still looked for, just less often.
+    ///
+    /// This used to stop at `probeUntil`, leaving panel open as the only probe,
+    /// on the theory that it "covers the long tail free". It did not. An
+    /// install that came up without the sensor, most likely because it launched
+    /// docked with the lid shut, stayed blind for three days. Every write in
+    /// that time was the bare ceiling, even at 202 lux. Nobody opens the panel
+    /// of an app that seems to be working, and a hidden icon cannot be opened
+    /// at all.
+    ///
+    /// 10s bounds how long the keys sit at the ceiling after the lid opens. The
+    /// cost is one 7.1ms walk per 10s, i.e. ~0.07% of a core, and only while
+    /// the sensor is missing. Once it is found the probing stops for good.
+    private static let lateProbeInterval: TimeInterval = 10
+    private var lastProbe = Date.distantPast
 
     /// (brightness now in force, lux, whether the ambient gate is holding it off)
     var onChange: ((Float, Int?, Bool) -> Void)?
@@ -205,7 +220,10 @@ final class Limiter {
         let ceil = _ceiling
         let sens = _sensitivity
         var als = sensor
-        let probe = als == nil && (probeSensor || Date() < probeUntil)
+        let now = Date()
+        let probe = als == nil && (probeSensor || now < probeUntil
+                                   || now.timeIntervalSince(lastProbe) >= Self.lateProbeInterval)
+        if probe { lastProbe = now }
         lock.unlock()
 
         var appeared = false
