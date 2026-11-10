@@ -26,8 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// a rebuild would otherwise silently drop an update the user was told about.
     private var latestUpdateVersion: String?
     private var globalClickMonitor: Any?
-    /// Keeps the periodic update check alive. Six hours, with generous leeway
-    /// so it coalesces with whatever else wakes the machine.
+    /// Keeps the periodic update check alive. Six hours of wall-clock time,
+    /// sleep included, with generous leeway so it coalesces with whatever else
+    /// wakes the machine.
     private var updateTimer: DispatchSourceTimer?
     private static let updateInterval: TimeInterval = 6 * 60 * 60
     private var loginCheckbox: NSButton!
@@ -847,10 +848,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     ///
     /// `UpdateCheck` still throttles to one request an hour, so this cannot
     /// become chatty regardless of the interval chosen here.
+    ///
+    /// Wall-clock time, not `deadline:`. A `DispatchTime` deadline runs on
+    /// `mach_absolute_time()`, which stops while the Mac sleeps, so "six hours"
+    /// meant six hours *awake*. On a laptop that is closer to a day: the
+    /// installed 1.2.0 had been awake 2h42m of the 6h32m after its launch and
+    /// still had not checked for 1.2.1. A wall-clock timer that comes due
+    /// during sleep fires on the next wake.
     private func startUpdateTimer() {
         guard Self.displayVersion != "dev" else { return }
         let t = DispatchSource.makeTimerSource(queue: .main)
-        t.schedule(deadline: .now() + Self.updateInterval,
+        t.schedule(wallDeadline: .now() + Self.updateInterval,
                    repeating: Self.updateInterval,
                    leeway: .seconds(600))
         t.setEventHandler { [weak self] in self?.checkForUpdate() }
